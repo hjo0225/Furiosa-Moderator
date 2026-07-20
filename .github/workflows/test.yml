@@ -1,0 +1,58 @@
+name: test
+
+# PR 검사. main 으로 들어오기 전에 여기서 막는다.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r api/requirements.txt pytest
+      - run: python -m pytest api/tests -q
+      # 앱이 import 단계에서 터지지 않는지 — 라우터 등록 누락·순환참조를 여기서 잡는다.
+      # DB 접속은 하지 않는다(startup 훅은 실패해도 앱이 뜨도록 되어 있다).
+      - name: Import check
+        run: python -c "import api.main; print('routes:', len(api.main.app.routes))"
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE: https://mindlens-api-128792069861.asia-northeast3.run.app
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 키가 커밋에 섞여 들어오는 걸 막는다. .env.local 은 gitignore 에 있지만
+      # 사람이 실수로 다른 파일에 붙여넣는 경우가 실제로 잦다.
+      - name: Scan for secrets
+        run: |
+          if git grep -nIE 'furiosa-[A-Za-z0-9]{20,}' -- . ':!.github/workflows/*'; then
+            echo "::error::Furiosa API 키로 보이는 문자열이 커밋에 있다. Secret Manager 를 쓸 것."
+            exit 1
+          fi
+          if git grep -nIE '"private_key":|BEGIN (RSA )?PRIVATE KEY' -- .; then
+            echo "::error::서비스 계정 키/개인키가 커밋에 있다."
+            exit 1
+          fi
+          echo "시크릿 스캔 통과"

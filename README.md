@@ -67,6 +67,23 @@ cd web && npm install && npm run dev
 
 테스트: `./.venv/Scripts/python.exe -m pytest api/tests -q`
 
+## CI/CD
+
+`main` 에 머지되면 자동 배포된다. 인증은 **Workload Identity Federation** — GitHub 에 서비스 계정
+키를 저장하지 않는다. `hjo0225/Furiosa-Moderator` 에서 온 OIDC 토큰만 배포 SA 를 가장할 수 있다.
+
+| 워크플로 | 시점 | 하는 일 |
+|---|---|---|
+| `test.yml` | PR → main | pytest · import 검사 · `tsc --noEmit` · `next build` · 시크릿 스캔 |
+| `deploy.yml` | push → main | 테스트 → 변경된 서비스만 배포 → 스모크 테스트 → 실패 시 자동 롤백 |
+
+- **변경 감지**: `api/` 만 고치면 웹(3분 빌드)은 건드리지 않는다. 판별이 불가능하면 둘 다 배포한다.
+- **환경변수·시크릿은 워크플로에 적지 않는다.** 기존 서비스 설정을 물려받아 이미지만 바꾼다 —
+  워크플로에 값이 빠지면 조용히 설정이 지워지기 때문이다.
+- **스모크 테스트가 실패하면 직전 리비전으로 트래픽을 되돌린다.** API 는 `/health` 가
+  `ok` 와 `llm_key_present` 를 둘 다 만족해야 통과다(시크릿 주입 누락을 잡는다).
+- 수동 전체 배포: Actions → deploy → Run workflow → `force_all` 체크.
+
 ## 알려진 미해결
 
 - **실기기 음성 테스트가 아직이다.** `interview-flow.tsx` 는 원본에서도 실사용자를 태운 적이 없다. iOS 사파리 확인 필요.
