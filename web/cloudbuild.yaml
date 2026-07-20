@@ -9,3 +9,7 @@ images:
   - ${_IMAGE}
 options:
   machineType: E2_HIGHCPU_8
+  # 서비스 계정이 제출한 빌드는 기본 로그 버킷(GCS)에 쓰는데 gcloud 가 그걸 스트리밍하지 못해
+  # 빌드가 성공해도 exit 1 로 끝난다(권한 실패와 빌드 실패를 구별할 수 없어 더 나쁘다).
+  # Cloud Logging 으로 보내면 CI 출력에서 그대로 읽힌다.
+  logging: CLOUD_LOGGING_ONLY
