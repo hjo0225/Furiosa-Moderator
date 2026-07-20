@@ -85,9 +85,21 @@ jobs:
           gcloud run deploy "$API_SERVICE" \
             --source=api \
             --region="$REGION" --project="$PROJECT_ID" --quiet
+          # 롤백이 한 번이라도 돌면 트래픽이 특정 리비전에 '고정'된다. 그 뒤로는 배포해도
+          # 새 리비전만 생기고 트래픽은 옛 리비전에 남는다 — CI 는 성공이라 보고하면서
+          # 옛 코드를 서빙하는 상태가 된다. 실제로 그렇게 됐다. 매번 최신으로 푼다.
+          gcloud run services update-traffic "$API_SERVICE" \
+            --region="$REGION" --project="$PROJECT_ID" --to-latest --quiet
 
       - name: Smoke test
         run: |
+          LATEST=$(gcloud run services describe "$API_SERVICE" --region="$REGION" \
+            --project="$PROJECT_ID" --format='value(status.latestReadyRevisionName)')
+          SERVING=$(gcloud run services describe "$API_SERVICE" --region="$REGION" \
+            --project="$PROJECT_ID" --format='value(status.traffic[0].revisionName)')
+          echo "최신=$LATEST 서빙=$SERVING"
+          # 200 만 확인하면 옛 리비전이 응답해도 통과한다. 방금 배포한 게 서빙 중인지 본다.
+          [ "$LATEST" = "$SERVING" ] || { echo "서빙 리비전이 방금 배포한 것과 다르다"; exit 1; }
           for i in $(seq 1 10); do
             BODY=$(curl -fsS --max-time 20 "$API_URL/health") && break
             echo "재시도 $i…"; sleep 6
@@ -136,9 +148,18 @@ jobs:
         run: |
           gcloud run deploy "$WEB_SERVICE" --image="$IMG" \
             --region="$REGION" --project="$PROJECT_ID" --quiet
+          # deploy-api 쪽 주석 참고 — 롤백이 고정한 트래픽을 매번 최신으로 푼다.
+          gcloud run services update-traffic "$WEB_SERVICE" \
+            --region="$REGION" --project="$PROJECT_ID" --to-latest --quiet
 
       - name: Smoke test
         run: |
+          LATEST=$(gcloud run services describe "$WEB_SERVICE" --region="$REGION" \
+            --project="$PROJECT_ID" --format='value(status.latestReadyRevisionName)')
+          SERVING=$(gcloud run services describe "$WEB_SERVICE" --region="$REGION" \
+            --project="$PROJECT_ID" --format='value(status.traffic[0].revisionName)')
+          echo "최신=$LATEST 서빙=$SERVING"
+          [ "$LATEST" = "$SERVING" ] || { echo "서빙 리비전이 방금 배포한 것과 다르다"; exit 1; }
           for i in $(seq 1 10); do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$WEB_URL/")
             [ "$CODE" = "200" ] && break
