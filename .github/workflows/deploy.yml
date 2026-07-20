@@ -51,17 +51,10 @@ jobs:
           echo "api=$(echo "$CHANGED" | grep -q '^api/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "web=$(echo "$CHANGED" | grep -q '^web/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+  # 배포 전 마지막 관문. PR 검사와 **같은 정의**를 재사용한다 —
+  # 여기서 pytest 만 따로 돌리면 main 직접 푸시가 시크릿 스캔·타입체크를 우회한다.
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r api/requirements.txt pytest
-      # 배포 전 마지막 관문. 여기가 빨간데 배포되면 안 된다.
-      - run: python -m pytest api/tests -q
+    uses: ./.github/workflows/test.yml
 
   deploy-api:
     needs: [changes, test]
