@@ -131,7 +131,22 @@ export function useRecorder() {
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported || recRef.current) return false;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // `audio: true` 만 주면 기기·브라우저 기본값에 맡겨진다. STT 정확도는 입력 오디오에
+      // 크게 좌우되므로 명시한다:
+      //  - echoCancellation: 스피커로 나가는 AI 진행자 목소리가 마이크로 되돌아오는 걸 막는다.
+      //    이어폰 없이 쓰는 응답자가 대부분이라 이게 없으면 진행자 발화가 답변에 섞인다.
+      //  - noiseSuppression / autoGainControl: 실사용 환경(카페·길거리)과 작게 말하는 응답자 대응.
+      //  - sampleRate 16k: STT 가 내부적으로 쓰는 값. 더 높게 받아 다운샘플되느니 맞춰 준다.
+      // 브라우저가 지원하지 않는 제약은 조용히 무시되므로 폴백 분기가 따로 필요 없다.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1,
+        },
+      });
       const rec = new MediaRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => {
