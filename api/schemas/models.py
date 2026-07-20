@@ -1,0 +1,144 @@
+"""도메인 스키마 — 아키텍처 §7 데이터 모델.
+
+Project / InterviewGuide / Session / Turn / Insight / Respondent.
+응답자는 익명 ID 로만 관리하고 PII 는 저장 전에 마스킹한다(PRD 9절).
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# --- 의뢰자 -----------------------------------------------------------------
+
+ProjectStatus = Literal["draft", "deployed", "closed"]
+
+
+class GuideQuestion(BaseModel):
+    id: str
+    text: str
+    goal: str = ""          # 이 문항으로 알아내려는 것 (M-1 커버리지 판정에 쓰인다)
+    order: int = 0
+
+
+class InterviewGuide(BaseModel):
+    project_id: str = ""
+    goal: str = ""          # 조사 전체 목표
+    questions: list[GuideQuestion] = Field(default_factory=list)
+    version: int = 1
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class Project(BaseModel):
+    id: str = ""
+    owner: str = "anonymous"     # MVP 무인증 — 링크 소유 기반
+    title: str = ""
+    topic: str
+    target: str = ""             # 대상 조건
+    status: ProjectStatus = "draft"
+    created_at: datetime = Field(default_factory=_now)
+    session_count: int = 0
+    completed_count: int = 0
+
+
+class ProjectCreateIn(BaseModel):
+    topic: str
+    title: str = ""
+    target: str = ""
+
+
+class GuideGenerateIn(BaseModel):
+    """가이드 재생성 요청 — 비우면 프로젝트의 주제·대상을 그대로 쓴다."""
+    topic: str = ""
+    target: str = ""
+
+
+# --- 응답자 -----------------------------------------------------------------
+
+SessionStatus = Literal["consented", "active", "completed", "abandoned"]
+
+
+class ConsentLog(BaseModel):
+    """동의 로그 (R-1) — 개인식별정보는 담지 않는다."""
+    agreed: bool
+    purpose_version: str = "v1"
+    at: datetime = Field(default_factory=_now)
+    user_agent_hash: str = ""    # 원문 UA 가 아니라 해시만
+
+
+class Session(BaseModel):
+    id: str = ""
+    project_id: str
+    respondent_id: str = ""      # 익명 ID
+    status: SessionStatus = "consented"
+    started_at: datetime = Field(default_factory=_now)
+    ended_at: datetime | None = None
+    asked: int = 0               # 진행자 질문 수
+    summary: str = ""
+    covered: list[str] = Field(default_factory=list)  # 커버한 guide question id
+
+
+class SessionStartIn(BaseModel):
+    # project_id 는 경로에서 온다. 본문에 있으면 받아만 두고 경로 값을 신뢰한다.
+    project_id: str = ""
+    agreed: bool = False
+    user_agent: str = ""
+
+
+class Turn(BaseModel):
+    id: str = ""
+    session_id: str = ""
+    role: Literal["moderator", "respondent"]
+    text: str                    # 저장 시점에 이미 마스킹된 텍스트
+    emotion: str = ""            # M-3 톤·감정 라벨
+    emotion_confidence: float = 0.0
+    is_probe: bool = False       # 꼬리질문 여부
+    question_id: str = ""        # 대응하는 guide question
+    pii_types: list[str] = Field(default_factory=list)  # 무엇이 마스킹됐는지(원문 아님)
+    guardrail_rewritten: bool = False
+    created_at: datetime = Field(default_factory=_now)
+
+
+class TurnIn(BaseModel):
+    """응답자 발화 → 다음 진행자 발화 요청."""
+    # session_id 는 경로에서 온다. 본문 값은 신뢰하지 않는다.
+    session_id: str = ""
+    text: str = ""               # 텍스트 입력 또는 STT 결과
+    lang: str = "ko"
+
+
+class TurnOut(BaseModel):
+    message: str                 # 진행자의 다음 한 마디
+    done: bool = False
+    asked: int = 0
+    is_probe: bool = False
+    guardrail_rewritten: bool = False
+    emotion: str = ""
+
+
+# --- 집계 -------------------------------------------------------------------
+
+class ThemeInsight(BaseModel):
+    theme: str
+    summary: str
+    quotes: list[str] = Field(default_factory=list)
+    # 이 주제를 가리키는 짧은 검색어들. LLM 이 '어휘'를 주고 '세는 일'은 DB 가 한다.
+    # theme 명 자체로 전사를 검색하면 서술형이라("배달비 및 할인 제도에 대한 불만족")
+    # 절대 매칭되지 않아 카운트가 전부 0 이 된다.
+    keywords: list[str] = Field(default_factory=list)
+    mention_count: int = 0
+
+
+class Insight(BaseModel):
+    project_id: str = ""
+    overall: str = ""
+    themes: list[ThemeInsight] = Field(default_factory=list)
+    sentiment: dict[str, int] = Field(default_factory=dict)
+    session_count: int = 0
+    generated_at: datetime = Field(default_factory=_now)

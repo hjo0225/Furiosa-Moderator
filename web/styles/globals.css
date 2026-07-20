@@ -1,0 +1,212 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Optimal Workshop 팔레트 (DESIGN.md §1-1 SSOT). 폰트는 Pretendard 유지. */
+    --indigo: #00a4df; /* alias명 유지 → sky-blue */
+    --indigo-hover: #0090c4;
+    --violet: #4785ff;
+    --bg: #fcfcfc;
+    --bg-alt: #f3f3f3;
+    --surface: #ffffff;
+    --slate: #25353f;
+    --text-primary: #0d0d0d;
+    --text-secondary: #454545;
+    --border: #e6e6e6;
+    --auth-gradient: linear-gradient(135deg, #25353f 0%, #1c2a32 60%, #0d0d0d 100%);
+    /* 기본 액센트 = sky-blue (플랫폼·앱·admin·auth·마케팅 중립). DESIGN.md §1-1-a.
+       --accent : 텍스트·링크·테두리(흰 배경 가독)  --accent-solid : 채운 버튼 배경  --accent-on : 그 위 글자 */
+    --accent: #00a4df;
+    --accent-deep: #0090c4;
+    --accent-soft: #4785ff;
+    --accent-wash: #e5f2f6;
+    --accent-solid: #00a4df;
+    --accent-on: #ffffff;
+  }
+
+  /* Validate — OW 그린 */
+  .theme-validate {
+    --accent: #00aa64;
+    --accent-deep: #00824d;
+    --accent-soft: #8ee183;
+    --accent-wash: #e8f7ef;
+    --accent-solid: #00aa64;
+    --accent-on: #ffffff;
+  }
+
+  /* Survey — OW 블루 */
+  .theme-survey {
+    --accent: #4785ff;
+    --accent-deep: #3a6fe0;
+    --accent-soft: #4785ff;
+    --accent-wash: #eaf1ff;
+    --accent-solid: #4785ff;
+    --accent-on: #ffffff;
+  }
+
+  /* Prediction — OW 시안 */
+  .theme-prediction {
+    --accent: #00aeed;
+    --accent-deep: #0090c4;
+    --accent-soft: #00aeed;
+    --accent-wash: #e5f2f6;
+    --accent-solid: #00aeed;
+    --accent-on: #ffffff;
+  }
+
+  /* Review — OW 오렌지. 솔리드 버튼/배지는 다른 솔루션과 일관되게 오렌지(deep)+흰 글자 */
+  .theme-review {
+    --accent: #f18134;
+    --accent-deep: #d96f29;
+    --accent-soft: #f18134;
+    --accent-wash: #fdf0e7;
+    --accent-solid: #d96f29;
+    --accent-on: #ffffff;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-primary);
+    font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont,
+      system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+    /* 전체 본문 기본 굵기 한 단계 ↑ (400→500). 제목/토큰은 각 +100. */
+    font-weight: 500;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* 한국어는 어절(공백) 단위로만 줄바꿈 — "솔루\n션" 같은 단어 중간 끊김 방지. 전 페이지 적용. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    /* OW = 플랫. 라디얼 그라데이션 제거. */
+  }
+
+  ::selection {
+    background: rgba(0, 164, 223, 0.18);
+    color: var(--text-primary);
+  }
+
+  /* 키보드 포커스만 링 표시 (a11y) — 서브브랜드 액센트(Validate=그린) */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* 참고사이트 시그니처 — 제목은 얇게(400) + 타이트한 자간. (강조가 필요한 작은 제목은
+     컴포넌트에서 font-medium/semibold 로 명시) */
+  h1, h2, h3, h4 {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+}
+
+@layer components {
+  /* 섹션 라벨 (작은 대문자 + 룰) — 서브브랜드 액센트를 따른다(Validate=그린, Review/마케팅=인디고).
+     글자는 가독 액센트(text-accent), 틱은 비비드(accent-soft) */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 font-mono text-meta uppercase text-accent;
+  }
+  .eyebrow::before {
+    content: "";
+    @apply inline-block h-px w-6 bg-accent-soft;
+  }
+
+  /* 본문 가독 링크 */
+  .link-underline {
+    @apply underline decoration-border decoration-1 underline-offset-4 transition-colors hover:decoration-accent;
+  }
+
+  /* 히어로 헤드라인 강조 — 각 솔루션 테마 고유색(검증=그린·인터뷰=블루·매출예측=시안·사업계획서=오렌지). */
+  .grad {
+    color: var(--accent);
+  }
+
+  /* 제품 화면 캔버스 — OW = 플랫. 틴트 그라데이션 제거. */
+  .app-canvas {
+    background-color: var(--bg);
+  }
+
+  /* ── 홈 스크롤 스냅 (풀스크린 섹션) — ScrollSnap 이 html 에 .snap-home 토글 ──
+     스크롤 시 다음 섹션이 뷰포트를 꽉 채우도록 걸린다. 헤더(h-16=4rem)만큼 보정.
+     proximity 사용(mandatory 아님) — 마지막 snap 섹션 뒤의 CTA+푸터(짧은 트레일)가
+     갇히지 않고 항상 도달 가능하도록. 꽉 차는 효과는 유지된다. */
+  html.snap-home {
+    scroll-snap-type: y proximity;
+    scroll-padding-top: 4rem;
+  }
+  .snap-sec {
+    scroll-snap-align: start;
+  }
+
+  /* ── 배경 질감 (OW식) — DESIGN.md §2 배경 질감 ──
+     OW는 플랫 흰색 + 부드러운 색조 섹션 + 목업 뒤 블러 글로우. 무거운 noise 없음. */
+
+  /* 색조 섹션 — 은은한 accent-wash 풀블리드. .theme-* 아래서 솔루션 색으로 리컬러. */
+  .section-tint {
+    background-color: var(--accent-wash);
+  }
+
+  /* 섹션 상단 중앙 래디얼 글로우 — accent 기반, 매우 옅게. hero/CTA 강조. */
+  .section-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .section-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(
+      60% 50% at 50% 0%,
+      color-mix(in srgb, var(--accent) 12%, transparent) 0%,
+      transparent 70%
+    );
+  }
+
+  /* OW 히어로 ice 배경 — 연한 accent-wash 틴트 + 크고 흐릿한 기하 셰이프(로고 모티프 대용).
+     pill 헤더 뒤까지 차오르도록 히어로 섹션이 -mt 로 헤더 아래로 파고든다. */
+  .section-ice {
+    background-color: color-mix(in srgb, var(--accent-wash) 55%, white);
+    background-image:
+      radial-gradient(640px 640px at 14% -12%, color-mix(in srgb, var(--accent-wash) 85%, white) 0%, transparent 62%),
+      radial-gradient(720px 720px at 86% 8%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 65%),
+      radial-gradient(520px 520px at 50% 110%, color-mix(in srgb, var(--accent-wash) 70%, white) 0%, transparent 60%);
+  }
+
+  /* 타이프라이터 커서 — OW 히어로의 깜빡이는 캐럿 */
+  .type-caret::after {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 0.85em;
+    margin-left: 0.06em;
+    vertical-align: -0.08em;
+    background: currentColor;
+    animation: caret-blink 1s steps(1) infinite;
+  }
+  @keyframes caret-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

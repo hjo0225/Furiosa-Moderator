@@ -1,0 +1,22 @@
+# 시크릿 — 절대 커밋 금지
+.env
+.env.local
+.env.*.local
+*.pem
+pw.txt
+
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 노드 / Next.js
+node_modules/
+.next/
+next-env.d.ts
+
+# 로컬 실행 산출물
+.uvicorn.err
+.uvicorn.out
+*.log
