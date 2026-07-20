@@ -53,12 +53,19 @@ jobs:
       # 사람이 실수로 다른 파일에 붙여넣는 경우가 실제로 잦다.
       - name: Scan for secrets
         run: |
-          if git grep -nIE 'furiosa-[A-Za-z0-9]{20,}' -- . ':!.github/workflows/*'; then
-            echo "::error::Furiosa API 키로 보이는 문자열이 커밋에 있다. Secret Manager 를 쓸 것."
-            exit 1
-          fi
-          if git grep -nIE '"private_key":|BEGIN (RSA )?PRIVATE KEY' -- .; then
-            echo "::error::서비스 계정 키/개인키가 커밋에 있다."
-            exit 1
-          fi
+          # 이 스텝의 규칙 문구 자체가 패턴에 걸리므로 워크플로 디렉터리는 항상 제외한다.
+          # (전에는 첫 규칙에만 제외가 있어 두 번째 규칙이 자기 자신을 잡았다.)
+          EXCLUDE=':!.github/workflows/*'
+          FAIL=0
+          scan() {
+            if git grep -nIE "$1" -- . "$EXCLUDE"; then
+              echo "::error::$2"
+              FAIL=1
+            fi
+          }
+          scan 'furiosa-[A-Za-z0-9]{20,}' 'Furiosa API 키로 보이는 문자열이 커밋에 있다. Secret Manager 를 쓸 것.'
+          scan '"private_key"[[:space:]]*:|BEGIN (RSA |EC )?PRIVATE KEY' '서비스 계정 키/개인키가 커밋에 있다.'
+          scan 'postgresql://[^[:space:]"]*:[^[:space:]"@]+@' 'DB 접속 문자열에 비밀번호가 박혀 있다.'
+          # 한 번에 다 보여준다 — 하나 고치고 다시 돌렸더니 또 걸리는 걸 반복하지 않도록.
+          [ "$FAIL" = "0" ] || exit 1
           echo "시크릿 스캔 통과"
