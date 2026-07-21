@@ -18,6 +18,10 @@ def strategize(state: InterviewState) -> dict:
     ledger = state.get("ledger", {})
     if ledger and all(e["status"] in ("satisfied", "saturated") for e in ledger.values()):
         return {"action": "close", "end_reason": "honest_close"}
+    # 모순을 적어놓고도 probe/clarify 로 라벨된 턴 → challenge 로 승격 (보강 D)
+    # analyst 가 사유엔 모순을 정확히 적으면서 action 은 probe 로 뭉개는 편향 교정 — 모순이 생성에 실린다.
+    if state.get("analysis", {}).get("contradiction", "").strip() and state.get("action") in ("probe", "clarify"):
+        return {"action": "challenge", "is_probe": False, "probe_type": ""}
     # revisit 근거 검증 — 원장에 빈약(touched) 문항이 없으면 강등, 대상이 틀리면 보정
     if state.get("action") == "revisit":
         thin = [qid for qid, e in ledger.items() if e["status"] == "touched"]
