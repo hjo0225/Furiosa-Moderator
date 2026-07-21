@@ -130,11 +130,69 @@ def test_build_payload_none_when_session_missing(monkeypatch):
     assert notify._build_payload("p_1", "s_x", Settings()) is None
 
 
+def _capture_post(monkeypatch):
+    from api.services import notify
+    captured = {}
+
+    class _R:
+        def raise_for_status(self): pass
+    def _post(url, json, timeout):
+        captured["url"] = url
+        return _R()
+    monkeypatch.setattr(notify.httpx, "post", _post)
+    monkeypatch.setattr(notify, "_build_payload",
+                        lambda pid, sid, settings: {"content": "x", "embeds": []})
+    return captured
+
+
+def test_emit_routes_to_project_webhook_when_set(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+    from api.schemas.models import Project
+
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url="https://default"))
+    monkeypatch.setattr(notify.store, "get_project",
+                        lambda pid: Project(id="p_1", topic="t", discord_webhook_url="https://project"))
+    captured = _capture_post(monkeypatch)
+
+    notify.emit_session_completed("p_1", "s_1")
+    assert captured["url"] == "https://project"   # 프로젝트 웹훅 우선
+
+
+def test_emit_falls_back_to_default_webhook(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+    from api.schemas.models import Project
+
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url="https://default"))
+    monkeypatch.setattr(notify.store, "get_project",
+                        lambda pid: Project(id="p_1", topic="t"))   # discord_webhook_url 비어있음
+    captured = _capture_post(monkeypatch)
+
+    notify.emit_session_completed("p_1", "s_1")
+    assert captured["url"] == "https://default"
+
+
+def test_emit_skips_when_no_webhook_anywhere(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+    from api.schemas.models import Project
+
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url=""))
+    monkeypatch.setattr(notify.store, "get_project", lambda pid: Project(id="p_1", topic="t"))
+    calls = []
+    monkeypatch.setattr(notify.httpx, "post", lambda *a, **k: calls.append(1))
+
+    notify.emit_session_completed("p_1", "s_1")
+    assert calls == []
+
+
 def test_emit_skips_when_url_unset(monkeypatch):
     from api.services import notify
     from api.config import Settings
 
     monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url=""))
+    monkeypatch.setattr(notify.store, "get_project", lambda pid: None)
     calls = []
     monkeypatch.setattr(notify.httpx, "post", lambda *a, **k: calls.append((a, k)))
 
@@ -148,6 +206,7 @@ def test_emit_posts_payload(monkeypatch):
 
     monkeypatch.setattr(notify, "get_settings",
                         lambda: Settings(discord_webhook_url="https://discord.com/api/webhooks/xyz"))
+    monkeypatch.setattr(notify.store, "get_project", lambda pid: None)
     monkeypatch.setattr(notify, "_build_payload",
                         lambda pid, sid, settings: {"content": "x", "embeds": []})
 
@@ -172,6 +231,7 @@ def test_emit_swallows_post_errors(monkeypatch):
 
     monkeypatch.setattr(notify, "get_settings",
                         lambda: Settings(discord_webhook_url="https://discord.com/api/webhooks/xyz"))
+    monkeypatch.setattr(notify.store, "get_project", lambda pid: None)
     monkeypatch.setattr(notify, "_build_payload",
                         lambda pid, sid, settings: {"content": "x", "embeds": []})
 
@@ -192,6 +252,7 @@ def test_emit_does_not_log_webhook_url_on_http_error(monkeypatch, caplog):
 
     url = "https://discord.com/api/webhooks/SECRET-abc123"
     monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url=url))
+    monkeypatch.setattr(notify.store, "get_project", lambda pid: None)
     monkeypatch.setattr(notify, "_build_payload",
                         lambda pid, sid, settings: {"content": "x", "embeds": []})
     monkeypatch.setattr(notify.time, "sleep", lambda *_: None)

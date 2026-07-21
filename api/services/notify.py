@@ -134,19 +134,21 @@ def _post(url: str, payload: dict) -> None:
 def emit_session_completed(pid: str, sid: str) -> None:
     """제출 완료 알림 진입점. 백그라운드에서 호출된다.
 
-    URL 미설정이면 조용히 skip. 어떤 예외도 밖으로 던지지 않는다 —
-    알림 실패가 인터뷰를 깨선 안 된다.
+    전송 대상은 프로젝트 웹훅(있으면) → 없으면 기본 웹훅. 둘 다 비면 skip.
+    어떤 예외도 밖으로 던지지 않는다 — 알림 실패가 인터뷰를 깨선 안 된다.
     """
     settings = get_settings()
-    if not settings.discord_webhook_url:
-        log.debug("DISCORD_WEBHOOK_URL 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
+    project = store.get_project(pid)
+    webhook = (project.discord_webhook_url if project else "") or settings.discord_webhook_url
+    if not webhook:
+        log.debug("웹훅 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
         return
     try:
         payload = _build_payload(pid, sid, settings)
         if payload is None:
             log.warning("알림 payload 없음 — 세션 미발견 (project=%s session=%s)", pid, sid)
             return
-        _post(settings.discord_webhook_url, payload)
+        _post(webhook, payload)
         log.info("Discord 알림 전송 (project=%s session=%s)", pid, sid)
     except Exception as e:   # noqa: BLE001 — 알림은 본류를 막지 않는다
         # 예외 문자열에 webhook URL 이 섞일 수 있어 타입·상태코드만 남긴다(시크릿 노출 금지).
