@@ -135,15 +135,16 @@ def emit_session_completed(pid: str, sid: str) -> None:
     """제출 완료 알림 진입점. 백그라운드에서 호출된다.
 
     전송 대상은 프로젝트 웹훅(있으면) → 없으면 기본 웹훅. 둘 다 비면 skip.
-    어떤 예외도 밖으로 던지지 않는다 — 알림 실패가 인터뷰를 깨선 안 된다.
+    어떤 예외도 밖으로 던지지 않는다 — 알림 실패가 인터뷰를 깨선 안 된다
+    (DB 조회 포함 전부 try 안에서 처리한다).
     """
     settings = get_settings()
-    project = store.get_project(pid)
-    webhook = (project.discord_webhook_url if project else "") or settings.discord_webhook_url
-    if not webhook:
-        log.debug("웹훅 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
-        return
     try:
+        project = store.get_project(pid)
+        webhook = (project.discord_webhook_url if project else "") or settings.discord_webhook_url
+        if not webhook:
+            log.debug("웹훅 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
+            return
         payload = _build_payload(pid, sid, settings)
         if payload is None:
             log.warning("알림 payload 없음 — 세션 미발견 (project=%s session=%s)", pid, sid)

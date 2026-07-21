@@ -271,6 +271,21 @@ def test_emit_does_not_log_webhook_url_on_http_error(monkeypatch, caplog):
     assert url not in caplog.text
 
 
+def test_emit_swallows_get_project_errors(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(discord_webhook_url="https://default"))
+
+    def _boom(pid):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(notify.store, "get_project", _boom)
+    monkeypatch.setattr(notify.time, "sleep", lambda *_: None)
+
+    # get_project 가 터져도 예외가 밖으로 새지 않아야 한다 (BackgroundTask 계약)
+    notify.emit_session_completed("p_1", "s_1")
+
+
 def test_submit_schedules_notification(monkeypatch):
     from fastapi import BackgroundTasks
     from api.routers import public
