@@ -1,40 +1,42 @@
-"""listen — 발화 대기(interrupt)와 분석·행동·초안의 만능 1콜 (T1 과도기).
+"""listen — 발화 대기(interrupt) + 만능 1콜 + 원장 갱신 (T2).
 
-interrupt() 가 노드 첫 문장인 것이 규약이다: 재개 시 노드가 처음부터 재실행돼도
-interrupt 앞에 부수효과가 없어 멱등이다(전역 불변식).
-
-T1 은 기존 모더레이터 프롬프트를 그대로 써서 분석+행동선택+질문초안을 1콜로 받는다
-(콜 수·대화 품질 불변). T3 에서 분석(listen)/생성(generate) 콜로 분리된다.
+T2: store 를 더 이상 읽지 않는다 — 대화·커버리지·페이스 전부 State 소유(필수③).
+원장 갱신은 v1 규칙대로 노드 내에서(슬로우패스 이사는 T4).
+interrupt() 는 여전히 노드 첫 문장 — 재실행 멱등 규약.
 """
 from __future__ import annotations
 
+from langchain_core.messages import HumanMessage
 from langgraph.types import interrupt
 
-from ...prompts.interview_moderator import interview_moderator_system
-from ...schemas.models import InterviewGuide
-from ...services import store
 from ...services.llm_client import get_llm
-from ...services.moderator import _ModeratorOut, _moderator_user
+from ..ledger import update_ledger
+from ..prompts import ListenOut, interview_moderator_system, listen_user
 from ..state import InterviewState
 
 
 def listen(state: InterviewState) -> dict:
     utterance = interrupt({"waiting": "respondent"})  # 여기서 잠든다 — 재개값 = 마스킹된 발화
+    utterance = (utterance or "").strip()
 
-    history = store.list_turns(state["project_id"], state["session_id"])
-    asked = sum(1 for t in history if t.role == "moderator")
-    guide = InterviewGuide.model_validate(state["guide"])
+    prev_qid = state.get("question_id", "")           # 응답자가 방금 답한 문항
     out, _ = get_llm().structured(
         interview_moderator_system(state.get("lang", "ko")),
-        _moderator_user(guide, history, asked, list(state.get("covered", []))),
-        _ModeratorOut,
-        max_tokens=500,
+        listen_user(
+            state["guide"], state.get("messages", []), utterance,
+            state.get("asked", 0), state.get("probe_streak", 0),
+            state.get("ledger", {}), state.get("lang", "ko"),
+        ),
+        ListenOut,
+        max_tokens=700,
     )
     return {
-        "utterance": utterance or "",
+        "messages": [HumanMessage(content=utterance)],
+        "utterance": utterance,
+        "ledger": update_ledger(state.get("ledger", {}), prev_qid, out.coverage, out.facts, out.hooks),
         "draft": (out.message or "").strip(),
         "action": "close" if out.done else ("probe" if out.is_probe else "advance"),
-        "question_id": out.question_id or "",
+        "question_id": out.question_id or prev_qid,
         "is_probe": bool(out.is_probe),
-        "asked": asked,
+        **({"end_reason": "model_done"} if out.done else {}),
     }

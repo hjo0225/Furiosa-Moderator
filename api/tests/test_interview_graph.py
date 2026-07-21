@@ -10,8 +10,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from api.interview.graph import build_graph
+from api.interview.prompts import ListenOut
+from api.interview.state import init_ledger
 from api.schemas.models import GuideQuestion, InterviewGuide, Turn
-from api.services.moderator import _ModeratorOut
 
 GUIDE = InterviewGuide(
     project_id="p1", goal="배달앱 전환 요인",
@@ -56,8 +57,8 @@ def fakes(monkeypatch):
     from api.interview.nodes import speak as speak_mod
 
     fs = FakeStore()
-    for mod in (listen_mod, speak_mod):
-        monkeypatch.setattr(mod, "store", fs)
+    # T2 부터 listen 은 store 를 안 읽는다(상태 소유) — speak 만 기록용으로 쓴다
+    monkeypatch.setattr(speak_mod, "store", fs)
     # guard 는 LLM 없이 동작하도록 고정 (재작성 경로는 가드레일 자체 테스트가 커버)
     monkeypatch.setattr(
         guard_mod.guardrail, "ensure_neutral",
@@ -76,14 +77,15 @@ def fakes(monkeypatch):
 def _start(g, config):
     return g.invoke(
         {"project_id": "p1", "session_id": "s1", "lang": "ko",
-         "guide": GUIDE.model_dump(), "covered": [], "asked": 0},
+         "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
+         "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
         config,
     )
 
 
 def test_opening_then_sleeps_at_interrupt(fakes):
     fs, set_llm = fakes
-    set_llm([_ModeratorOut(message="안녕하세요! 어떤 배달앱을 쓰세요?", question_id="q1")])
+    set_llm([ListenOut(message="안녕하세요! 어떤 배달앱을 쓰세요?", question_id="q1")])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     result = _start(g, config)
@@ -98,9 +100,9 @@ def test_opening_then_sleeps_at_interrupt(fakes):
 def test_resume_probe_then_close_ends(fakes):
     fs, set_llm = fakes
     set_llm([
-        _ModeratorOut(message="오프닝 질문입니다?", question_id="q1"),
-        _ModeratorOut(message="어느 정도일 때 부담되세요?", question_id="q1", is_probe=True),
-        _ModeratorOut(message="감사합니다. 마치겠습니다.", done=True),
+        ListenOut(message="오프닝 질문입니다?", question_id="q1"),
+        ListenOut(message="어느 정도일 때 부담되세요?", question_id="q1", is_probe=True),
+        ListenOut(message="감사합니다. 마치겠습니다.", done=True),
     ])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -120,22 +122,25 @@ def test_resume_probe_then_close_ends(fakes):
 
 def test_12turn_hard_guard_forces_close(fakes):
     fs, set_llm = fakes
-    # 이미 진행자 질문 11개가 저장돼 있다 → 이번이 12번째 = 강제 종료
-    fs.turns = [Turn(role="moderator", text=f"질문{i}") for i in range(11)]
     set_llm([
-        _ModeratorOut(message="오프닝?", question_id="q1"),
-        _ModeratorOut(message="더 파고들 질문?", question_id="q2", is_probe=True),  # LLM 은 계속하려 한다
+        ListenOut(message="오프닝?", question_id="q1"),
+        ListenOut(message="더 파고들 질문?", question_id="q2", is_probe=True),  # LLM 은 계속하려 한다
     ])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
-    _start(g, config)
+    # T2: asked 는 State 소유 — 이미 11회 물은 세션으로 시작 (이어하기 시나리오)
+    g.invoke({"project_id": "p1", "session_id": "s1", "lang": "ko",
+              "guide": GUIDE.model_dump(), "covered": [], "asked": 11,
+              "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
+             config)
     r = g.invoke(Command(resume="네"), config)
     assert r["done"] is True                          # 결정론 엣지가 이겼다
+    assert r["end_reason"] == "max_turns"
 
 
 def test_guard_rewrites_leading_question(fakes):
     fs, set_llm = fakes
-    set_llm([_ModeratorOut(message="당연히 편하셨죠?", question_id="q1")])
+    set_llm([ListenOut(message="당연히 편하셨죠?", question_id="q1")])
     g = build_graph(InMemorySaver())
     r = _start(g, {"configurable": {"thread_id": "s1"}})
     assert r["message"] == "중립 질문으로 재작성"
@@ -209,3 +214,59 @@ def test_turn_uses_graph_engine_when_flag_set(monkeypatch):
     pub.turn("p1", "s1", TurnIn(text=""))
     assert called["engine"] == "graph"
     get_settings.cache_clear()
+
+
+# --- T2: 상태 소유 + 원장 ------------------------------------------------------
+
+def test_messages_accumulate_in_state(fakes):
+    fs, set_llm = fakes
+    set_llm([
+        ListenOut(message="오프닝?", question_id="q1"),
+        ListenOut(message="꼬리?", question_id="q1", is_probe=True),
+    ])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="배민 써요"), config)
+    msgs = g.get_state(config).values["messages"]
+    # AI(오프닝) → Human(답변) → AI(꼬리질문)
+    assert [m.type for m in msgs] == ["ai", "human", "ai"]
+    assert msgs[1].content == "배민 써요"
+
+
+def test_listen_updates_ledger_and_probe_streak(fakes):
+    fs, set_llm = fakes
+    set_llm([
+        ListenOut(message="오프닝?", question_id="q1"),
+        ListenOut(message="꼬리?", question_id="q1", is_probe=True,
+                  coverage="touched", facts=["배민 사용"], hooks=["배민클럽"]),
+    ])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="배민 써요, 배민클럽 때문에"), config)
+    v = g.get_state(config).values
+    assert v["ledger"]["q1"]["facts"] == ["배민 사용"]
+    assert v["ledger"]["q1"]["hooks"] == ["배민클럽"]
+    assert v["ledger"]["q1"]["status"] == "touched"
+    assert v["probe_streak"] == 1                     # 꼬리질문 1연속
+
+
+def test_honest_close_when_all_satisfied(fakes):
+    fs, set_llm = fakes
+    # 원장을 전부 satisfied 로 채운 채 시작 — LLM 이 계속하자고 해도 결정론 close
+    led = init_ledger(GUIDE.model_dump())
+    for q in led:
+        led[q]["status"] = "satisfied"
+    set_llm([
+        ListenOut(message="오프닝?", question_id="q1"),
+        ListenOut(message="계속 묻고 싶은데요?", question_id="q2", coverage="satisfied"),
+    ])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s2"}}
+    g.invoke({"project_id": "p1", "session_id": "s2", "lang": "ko",
+              "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
+              "messages": [], "ledger": led, "probe_streak": 0}, config)
+    r = g.invoke(Command(resume="네 뭐든요"), config)
+    assert r["done"] is True                           # 정직한 종료가 이겼다
+    assert r["end_reason"] == "honest_close"           # 종료 근거가 기록된다
