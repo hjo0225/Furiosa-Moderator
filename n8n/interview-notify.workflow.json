@@ -1,0 +1,49 @@
+{
+  "name": "mindlens interview → Discord",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mindlens-interview",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-in",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "jsBlock": "const p = $json.body || $json;\nconst m = p.metrics || {};\nconst emo = Object.entries(m.emotion || {}).map(([k,v]) => `${k} ${v}`).join(' · ') || '없음';\nconst cov = m.coverage ? `${(m.coverage.covered||[]).length}/${m.coverage.total}` : '-';\nlet transcript = p.transcript || '';\nif (transcript.length > 1500) transcript = transcript.slice(0, 1500) + '…';\nconst embed = {\n  title: `새 인터뷰 응답 · ${p.project?.title || p.project?.id || ''}`,\n  description: p.summary || '(요약 없음)',\n  url: p.dashboard_url || undefined,\n  fields: [\n    { name: '감정', value: emo, inline: true },\n    { name: '커버리지', value: cov, inline: true },\n    { name: '진행자 질문', value: String(p.session?.asked ?? '-'), inline: true },\n    { name: '전사', value: '```\\n' + (transcript || '(없음)') + '\\n```' }\n  ]\n};\nreturn [{ json: { content: null, embeds: [embed] } }];"
+      },
+      "id": "format-embed",
+      "name": "Format embed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "discord-post",
+      "name": "Discord webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Format embed", "type": "main", "index": 0 }]] },
+    "Format embed": { "main": [[{ "node": "Discord webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": {},
+  "active": false
+}
