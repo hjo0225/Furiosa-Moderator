@@ -54,8 +54,8 @@ def test_set_webhook_updates_via_store(monkeypatch):
     monkeypatch.setattr(projects.store, "get_project", lambda pid: Project(id="p_1", topic="t"))
     monkeypatch.setattr(projects.store, "update_project", lambda pid, patch: updates.update(patch))
 
-    projects.set_webhook("p_1", WebhookSetIn(discord_webhook_url="https://x"))
-    assert updates == {"discord_webhook_url": "https://x"}
+    projects.set_webhook("p_1", WebhookSetIn(discord_webhook_url="https://discord.com/api/webhooks/1/abc"))
+    assert updates == {"discord_webhook_url": "https://discord.com/api/webhooks/1/abc"}
 
 
 def test_create_project_passes_webhook(monkeypatch):
@@ -66,5 +66,29 @@ def test_create_project_passes_webhook(monkeypatch):
     monkeypatch.setattr(projects.store, "create_project",
                         lambda p: captured.update(url=p.discord_webhook_url) or p)
 
-    projects.create_project(ProjectCreateIn(topic="주제", discord_webhook_url="https://x"))
-    assert captured["url"] == "https://x"
+    projects.create_project(ProjectCreateIn(topic="주제", discord_webhook_url="https://discord.com/api/webhooks/1/abc"))
+    assert captured["url"] == "https://discord.com/api/webhooks/1/abc"
+
+
+def test_project_webhook_excluded_from_response():
+    from api.schemas.models import Project
+    p = Project(topic="t", discord_webhook_url="https://discord.com/api/webhooks/1/abc")
+    assert "discord_webhook_url" not in p.model_dump()   # 응답에 시크릿 노출 안 됨
+    assert p.discord_webhook_url == "https://discord.com/api/webhooks/1/abc"  # 속성 접근은 그대로
+
+
+def test_webhook_input_rejects_non_discord_url():
+    import pytest
+    from pydantic import ValidationError
+    from api.schemas.models import WebhookSetIn, ProjectCreateIn
+    with pytest.raises(ValidationError):
+        WebhookSetIn(discord_webhook_url="https://evil.example/x")
+    with pytest.raises(ValidationError):
+        ProjectCreateIn(topic="t", discord_webhook_url="http://discord.com/api/webhooks/1/a")  # http 는 거부
+
+
+def test_webhook_input_accepts_discord_and_empty():
+    from api.schemas.models import WebhookSetIn
+    assert WebhookSetIn(discord_webhook_url="").discord_webhook_url == ""
+    ok = "https://discord.com/api/webhooks/123/abcDEF"
+    assert WebhookSetIn(discord_webhook_url=ok).discord_webhook_url == ok

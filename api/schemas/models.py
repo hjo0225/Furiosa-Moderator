@@ -8,11 +8,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_DISCORD_WEBHOOK_PREFIXES = (
+    "https://discord.com/api/webhooks/",
+    "https://discordapp.com/api/webhooks/",
+)
+
+
+def _validate_webhook_url(v: str) -> str:
+    """빈 문자열(해제) 또는 Discord 웹훅 URL 만 허용한다 (SSRF 차단)."""
+    v = (v or "").strip()
+    if v and not v.startswith(_DISCORD_WEBHOOK_PREFIXES):
+        raise ValueError("Discord 웹훅 URL 이어야 합니다 (https://discord.com/api/webhooks/...).")
+    return v
 
 
 # --- 의뢰자 -----------------------------------------------------------------
@@ -46,7 +60,7 @@ class Project(BaseModel):
     topic: str
     target: str = ""             # 대상 조건
     material_text: str = ""      # 조사 참고 자료 원문 (협업자 기능)
-    discord_webhook_url: str = ""  # 프로젝트별 알림 채널 override (비면 기본)
+    discord_webhook_url: str = Field(default="", exclude=True)  # 응답 노출 금지(시크릿). 저장·라우팅엔 사용.
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
@@ -59,10 +73,20 @@ class ProjectCreateIn(BaseModel):
     target: str = ""
     discord_webhook_url: str = ""
 
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def _v_webhook(cls, v: str) -> str:
+        return _validate_webhook_url(v)
+
 
 class WebhookSetIn(BaseModel):
     """프로젝트별 Discord 웹훅 설정/해제(빈 문자열이면 기본 채널로 폴백)."""
     discord_webhook_url: str = ""
+
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def _v_webhook(cls, v: str) -> str:
+        return _validate_webhook_url(v)
 
 
 class GuideGenerateIn(BaseModel):
