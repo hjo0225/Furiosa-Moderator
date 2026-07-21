@@ -22,6 +22,7 @@ from ..prompts.insight import (
 )
 from ..schemas.models import (
     GuideGenerateIn,
+    GuideQuestion,
     Insight,
     InterviewGuide,
     Project,
@@ -84,6 +85,39 @@ def get_project(pid: str) -> Project:
     return _require(pid)
 
 
+class _GenQuestion(GuideQuestion):
+    """생성 전용 스키마 — goal 을 필수로 승격.
+
+    저장·수정용 GuideQuestion 의 goal 은 default("") 라 LLM 스키마에서 required 가 아니고,
+    Qwen3 는 required 아닌 필드를 통째로 생략하는 실사고가 났다. 필수로 승격하면
+    비워 보낸 응답이 검증에서 떨어져 structured() 의 자가교정 재시도가 발동한다.
+    """
+
+    goal: str
+
+
+class _GenGuide(InterviewGuide):
+    questions: list[_GenQuestion]
+
+
+_GOAL_MARKER = "이 질문으로 알아내려는 것"
+
+
+def _split_goal_from_text(q: GuideQuestion) -> None:
+    """모델이 goal 을 text 뒤에 이어 붙여 보내는 실사고 보정(결정론).
+
+    goal 에 default("") 가 있어 스키마 검증은 통과해 버린다 — order/id 확정과
+    같은 계열의 서버 보정으로 분리한다. 프롬프트로도 금지하지만 재발 대비 이중 방어.
+    """
+    if _GOAL_MARKER not in q.text:
+        return
+    head, _, tail = q.text.partition(_GOAL_MARKER)
+    q.text = head.strip().rstrip("·:：-—").strip()
+    tail = tail.strip().lstrip(":：").strip()
+    if tail and not q.goal.strip():
+        q.goal = tail
+
+
 @router.post("/{pid}/guide", response_model=InterviewGuide)
 def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     """C-2 가이드 자동 생성."""
@@ -94,14 +128,16 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
         guide, _ = get_llm().structured(
             GUIDE_SYSTEM,
             guide_user(topic, target, p.material_text, p.motivation, p.utilization),
-            InterviewGuide,
+            _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
             max_tokens=2000,
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e
 
-    # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다.
+    # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
+    # 사고도 여기서 결정론으로 분리한다.
     for i, q in enumerate(guide.questions):
+        _split_goal_from_text(q)
         q.order = i
         q.id = q.id or f"q{i + 1}"
     guide.goal = guide.goal or topic
