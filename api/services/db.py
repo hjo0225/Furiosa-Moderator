@@ -199,6 +199,5 @@ def init_schema() -> None:
         has_version = insp.has_table("alembic_version")
 
     if has_core and not has_version:
-        command.stamp(cfg, "head")   # 기존 스키마를 baseline 으로 채택
-    else:
-        command.upgrade(cfg, "head")
+        command.stamp(cfg, "0001")   # 기존 스키마를 baseline(0001)으로 채택
+    command.upgrade(cfg, "head")     # baseline 이후 마이그레이션(0002…)을 적용
