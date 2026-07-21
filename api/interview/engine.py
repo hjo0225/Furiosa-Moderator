@@ -17,6 +17,7 @@ from ..services.moderator import tag_emotion
 from ..services.pii import mask_pii, scan_pii
 from .checkpoint import get_checkpointer
 from .graph import build_graph
+from .state import init_ledger
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,16 @@ def ready() -> bool:
     except Exception as e:
         log.warning("그래프 엔진 비활성 (체크포인터 실패): %s", e)
         return False
+
+
+def initial_state(project_id: str, sid: str, lang: str, guide: InterviewGuide, session: Session) -> dict:
+    """그래프 시작 상태 — 테스트와 엔진이 같은 빌더를 쓴다."""
+    gd = guide.model_dump()
+    return {
+        "project_id": project_id, "session_id": sid, "lang": lang, "guide": gd,
+        "messages": [], "ledger": init_ledger(gd),
+        "covered": list(session.covered), "asked": session.asked, "probe_streak": 0,
+    }
 
 
 def next_turn(
@@ -59,12 +70,7 @@ def next_turn(
     if g.get_state(config).next:          # interrupt 에서 잠들어 있다 → 재개
         result = g.invoke(Command(resume=masked), config)
     else:                                 # 첫 호출 → 그래프 시작(오프닝)
-        result = g.invoke(
-            {"project_id": project_id, "session_id": sid, "lang": lang,
-             "guide": guide.model_dump(), "covered": list(session.covered),
-             "asked": session.asked},
-            config,
-        )
+        result = g.invoke(initial_state(project_id, sid, lang, guide, session), config)
 
     message = result.get("message", "")
     done = bool(result.get("done"))
