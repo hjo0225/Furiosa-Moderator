@@ -71,6 +71,7 @@ def test_interview_routes_registered():
 
     paths = {r.path for r in m.app.routes if hasattr(r, "path")}
     assert "/api/public/projects/{pid}/sessions/{sid}/turn" in paths
+    assert "/api/public/projects/{pid}/sessions/{sid}/turn/stream" in paths
     assert "/api/projects/{pid}/guide" in paths
     assert "/api/speech/transcribe" in paths
     assert "/health" in paths

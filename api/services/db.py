@@ -23,7 +23,9 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    text,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -128,6 +130,20 @@ class InsightRow(Base):
     sentiment: Mapped[dict] = mapped_column(JSONB, default=dict)
     session_count: Mapped[int] = mapped_column(Integer, default=0)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BriefingChunkRow(Base):
+    __tablename__ = "briefing_chunks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(200), default="")   # 출처 보존 (중립성 필터)
+    embedding = mapped_column(Vector(1024))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 @lru_cache
