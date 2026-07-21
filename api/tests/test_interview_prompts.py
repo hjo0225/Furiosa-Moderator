@@ -69,7 +69,10 @@ def test_generate_user_injects_brief_and_technique():
 
 
 def test_reflect_out_and_prompt():
-    from api.interview.prompts import ReflectOut, reflect_user
-    assert set(ReflectOut.model_fields) == {"facts", "hooks", "coverage"}
-    u = reflect_user("갈아탄 계기는?", "전환 트리거", "쿠폰 때문에요")
-    assert "갈아탄 계기는?" in u and "쿠폰 때문에요" in u and "전환 트리거" in u
+    from api.interview.prompts import CoverageUpdate, ReflectOut, reflect_user
+    assert set(ReflectOut.model_fields) == {"updates"}       # 문항별 귀속 리스트로 확장 (보강 B)
+    assert set(CoverageUpdate.model_fields) == {"question_id", "coverage", "facts", "hooks"}
+    u = reflect_user(GUIDE, "q2", "쿠폰 때문에요")
+    # 교차 귀속 재료로 전체 문항이 실리고, 지금 물은 문항과 발화가 들어간다
+    assert "갈아탄 계기는?" in u and "어떤 앱을 쓰세요?" in u
+    assert "쿠폰 때문에요" in u and "트리거" in u

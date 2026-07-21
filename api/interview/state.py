@@ -39,7 +39,7 @@ class InterviewState(TypedDict, total=False):
     ledger: dict[str, CoverageEntry]
     covered: list[str]         # 대시보드용 출석부 — sessions.covered 와 동기
     asked: int                 # 진행자 질문 수 (speak 가 +1)
-    probe_streak: int          # 현 문항 연속 꼬리질문 수 (speak 가 갱신)
+    probe_streak: int          # 현 문항 연속 꼬리질문(probe/clarify) 수 (speak 가 갱신, 보강 A 상한 대상)
 
     # 턴 스크래치 — 매 턴 덮어씀
     utterance: str
