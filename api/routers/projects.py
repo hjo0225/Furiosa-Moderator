@@ -44,12 +44,18 @@ def _require(pid: str) -> Project:
 
 @router.post("", response_model=Project)
 def create_project(body: ProjectCreateIn) -> Project:
-    """C-1 주제 입력·프로젝트 생성 → 상태=draft."""
+    """C-1 조사 목적·브리프 입력·프로젝트 생성 → 상태=draft."""
     if not body.topic.strip():
-        raise HTTPException(400, "주제를 입력하세요.")
+        raise HTTPException(400, "조사 목적을 입력하세요.")
     return store.create_project(
-        Project(topic=body.topic.strip(), title=body.title.strip() or body.topic.strip()[:40],
-                target=body.target.strip(), discord_webhook_url=body.discord_webhook_url.strip())
+        Project(
+            topic=body.topic.strip(),
+            title=body.title.strip() or body.topic.strip()[:40],
+            target=body.target.strip(),
+            motivation=body.motivation.strip(),
+            utilization=body.utilization.strip(),
+            discord_webhook_url=body.discord_webhook_url.strip(),
+        )
     )
 
 
@@ -79,7 +85,10 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     target = body.target.strip() or p.target
     try:
         guide, _ = get_llm().structured(
-            GUIDE_SYSTEM, guide_user(topic, target, p.material_text), InterviewGuide, max_tokens=2000
+            GUIDE_SYSTEM,
+            guide_user(topic, target, p.material_text, p.motivation, p.utilization),
+            InterviewGuide,
+            max_tokens=2000,
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e

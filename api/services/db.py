@@ -44,6 +44,8 @@ class ProjectRow(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     topic: Mapped[str] = mapped_column(Text)
     target: Mapped[str] = mapped_column(Text, default="")
+    motivation: Mapped[str] = mapped_column(Text, default="")
+    utilization: Mapped[str] = mapped_column(Text, default="")
     material_text: Mapped[str] = mapped_column(Text, default="")
     discord_webhook_url: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
