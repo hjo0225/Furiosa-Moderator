@@ -58,6 +58,16 @@ def test_farewell_user_mentions_thanks():
     assert "감사" in farewell_user([])
 
 
+def test_generate_user_injects_brief_and_technique():
+    led = init_ledger(GUIDE)
+    u = generate_user("probe", "q1", "심화", "", GUIDE, [], led,
+                      brief_notes=[{"text": "배민클럽은 구독형 무료배달", "source": "의뢰자 자료.pdf", "score": 0.9}],
+                      technique="[기법: 5 Why] 이유 밑으로.")
+    assert "배민클럽은 구독형 무료배달" in u and "의뢰자 자료.pdf" in u
+    assert "유도하는 데 쓰지 마세요" in u                    # 중립성 필터 지시
+    assert "[기법: 5 Why]" in u
+
+
 def test_reflect_out_and_prompt():
     from api.interview.prompts import ReflectOut, reflect_user
     assert set(ReflectOut.model_fields) == {"facts", "hooks", "coverage"}

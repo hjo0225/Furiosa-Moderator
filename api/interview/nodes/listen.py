@@ -14,6 +14,8 @@ from langgraph.types import interrupt
 from ...services.llm_client import get_llm
 from ..prompts import ANALYST_SYSTEM, ListenOut, analysis_user
 from ..state import InterviewState
+from ..tools.pace import pace
+from .strategize import MAX_ASKED
 
 
 def listen(state: InterviewState) -> dict:
@@ -26,11 +28,14 @@ def listen(state: InterviewState) -> dict:
         turn_id = ""
 
     prev_qid = state.get("question_id", "")           # 응답자가 방금 답한 문항
+    ledger = state.get("ledger", {})
+    pending_n = sum(1 for e in ledger.values() if e["status"] == "pending")
     out, _ = get_llm().structured(
         ANALYST_SYSTEM,
         analysis_user(
             state["guide"], state.get("messages", []), utterance,
-            state.get("asked", 0), state.get("probe_streak", 0), state.get("ledger", {}),
+            state.get("asked", 0), state.get("probe_streak", 0), ledger,
+            pace_line=pace(state.get("asked", 0), MAX_ASKED, pending_n),   # 도구: 페이스 (결정론)
         ),
         ListenOut,
         max_tokens=500,
@@ -40,7 +45,8 @@ def listen(state: InterviewState) -> dict:
         "utterance": utterance,
         "answered_qid": prev_qid,
         "resp_turn_id": turn_id,
-        "analysis": {"contradiction": out.contradiction, "reason": out.reason},
+        "analysis": {"contradiction": out.contradiction, "reason": out.reason,
+                     "unknown_terms": out.unknown_terms},
         "action": out.action,
         "question_id": out.question_id or prev_qid,
         "probe_type": out.probe_type,

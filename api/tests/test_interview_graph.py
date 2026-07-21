@@ -407,6 +407,41 @@ def test_speak_emits_tokens_via_custom_stream(fakes):
     assert "".join(chunks) == "안녕하세요! 어떤 배달앱을 쓰세요?"   # 토큰 합 = 최종 발화
 
 
+def test_unknown_terms_trigger_brief_lookup(fakes, monkeypatch):
+    from api.interview.nodes import generate as gen_mod
+    looked = {}
+
+    def fake_lookup(pid, terms, k=2):
+        looked["terms"] = list(terms)
+        return [{"text": "배민클럽=구독제", "source": "자료", "score": 0.9}]
+
+    monkeypatch.setattr(gen_mod.brief, "lookup", fake_lookup)
+    fs, set_llm = fakes
+    llm = set_llm(outs=[ListenOut(action="probe", question_id="q1", unknown_terms=["배민클럽"]),
+                        ReflectOut()],
+                  texts=["오프닝?", "브리핑 반영 질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="배민클럽 때문에 갈아탔어요"), config)
+    assert looked["terms"] == ["배민클럽"]                   # 구조화 출력이 brief 를 지정했다
+    assert "배민클럽=구독제" in llm.text_prompts[-1]         # 검색 결과가 생성 프롬프트에 주입
+
+
+def test_no_unknown_terms_no_lookup(fakes, monkeypatch):
+    from api.interview.nodes import generate as gen_mod
+    called = []
+    monkeypatch.setattr(gen_mod.brief, "lookup", lambda *a, **k: called.append(1) or [])
+    fs, set_llm = fakes
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
+            texts=["오프닝?", "질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="그냥 편해서요"), config)
+    assert called == []                                      # 지정 없으면 검색도 없다
+
+
 def test_engine_stream_turn_yields_tokens_then_meta(fakes, monkeypatch):
     from api.interview import engine as eng
     fs, set_llm = fakes

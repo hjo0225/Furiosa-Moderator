@@ -25,6 +25,8 @@ ACTIONS = ("probe", "clarify", "challenge", "advance", "revisit", "redirect", "c
 class ListenOut(BaseModel):
     # 슬림 분석 (T4) — 취재 수첩 정리(facts/hooks/coverage)는 슬로우패스 ReflectOut 으로 이사
     contradiction: str = ""    # 앞선 발언과 모순이면 그 내용 한 줄 (없으면 "")
+    # 모르는 용어 나열 — brief(RAG) 의 트리거 (T0 폴백: 자율 tool choice 대신 명시적 분류)
+    unknown_terms: list[str] = Field(default_factory=list)
     # --- 전략 (행동 7종) ---
     action: Literal["probe", "clarify", "challenge", "advance", "revisit", "redirect", "close"] = "advance"
     question_id: str = ""      # advance/revisit 의 대상 문항 (그 외 행동은 현 문항 유지)
@@ -74,7 +76,8 @@ def _ledger_blocks(guide: dict, ledger: dict) -> tuple[str, str]:
 
 
 def analysis_user(
-    guide: dict, messages: list, utterance: str, asked: int, probe_streak: int, ledger: dict
+    guide: dict, messages: list, utterance: str, asked: int, probe_streak: int, ledger: dict,
+    pace_line: str = "",
 ) -> str:
     pending_block, thin_block = _ledger_blocks(guide, ledger)
     return (
@@ -82,7 +85,10 @@ def analysis_user(
         f"[지금까지 대화] (진행자 질문 {asked}회)\n{_convo(messages, utterance)}\n\n"
         f"[응답자의 직전 답변]\n{utterance or '(없음)'}\n\n"
         "직전 답변을 앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
-        f"(지금 문항에서 연속 {probe_streak}회 파고들었습니다. 2회를 넘겼으면 다른 행동을 고려하세요. "
+        "직전 답변에 당신이 모르는 용어·브랜드·고유명사가 있으면 unknown_terms 에 그대로 나열하세요"
+        "(아는 척 금지 — 없으면 빈 배열).\n"
+        + (f"{pace_line}\n" if pace_line else "")
+        + f"(지금 문항에서 연속 {probe_streak}회 파고들었습니다. 2회를 넘겼으면 다른 행동을 고려하세요. "
         "표면에 머물면 구체화, 사례가 나왔으면 심화 — probe_type 에 기록.)\n\n"
         f"[아직 다루지 않은 문항]\n{pending_block or '(전부 다룸)'}\n"
         f"[답이 얕은 문항 — revisit 후보]\n{thin_block or '(없음)'}\n\n"
@@ -117,7 +123,10 @@ _GEN_DIRECTIVES = {
 def generate_user(
     action: str, question_id: str, probe_type: str, contradiction: str,
     guide: dict, messages: list, ledger: dict,
+    brief_notes: list | tuple = (), technique: str = "",
 ) -> str:
+    from .tools.ledger_report import ledger_report
+
     qs = _qmap(guide)
     parts = [
         f"[조사 목표]\n{guide.get('goal', '') or '(목표 미기재)'}",
@@ -133,8 +142,14 @@ def generate_user(
     if action in ("advance", "revisit") and question_id in qs:
         q = qs[question_id]
         parts.append(f"[대상 문항]\n{q['text']} (알아낼 것: {q.get('goal', '')})")
-        if action == "revisit" and ledger.get(question_id, {}).get("facts"):
-            parts.append("[이 문항에서 이미 들은 것]\n- " + "\n- ".join(ledger[question_id]["facts"]))
+        if action == "revisit":
+            parts.append(ledger_report(guide, ledger, qid=question_id))   # 도구: 원장 상세
+    if brief_notes:
+        notes = "\n".join(f"- {n['text']} (출처: {n['source']})" for n in brief_notes)
+        parts.append("[의뢰자 브리핑 발췌 — 용어·사실 참고용]\n" + notes +
+                     "\n위 내용은 이해를 돕는 배경입니다. 특정 답을 유도하는 데 쓰지 마세요.")
+    if technique:
+        parts.append(technique)
     parts.append("진행자의 다음 한 마디(질문 1~2문장, 한국어 존댓말)만 출력하세요.")
     return "\n\n".join(parts)
 
