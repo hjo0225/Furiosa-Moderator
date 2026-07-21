@@ -23,9 +23,16 @@ export function NewProjectForm() {
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // 조사 목적·타깃 대상·동기·활용 방안은 모두 필수. 참고 자료만 선택.
+  const canSubmit =
+    purpose.trim() !== "" &&
+    target.trim() !== "" &&
+    motivation.trim() !== "" &&
+    utilization.trim() !== "";
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!purpose.trim() || creating) return;
+    if (!canSubmit || creating) return;
     setCreating(true);
     setFormError(null);
     try {
@@ -78,30 +85,39 @@ export function NewProjectForm() {
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">타깃 대상</span>
+              <span className="text-meta font-medium text-ink-soft">
+                타깃 대상 <span className="text-nogo">*</span>
+              </span>
               <input
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 placeholder="예: 수도권 거주 25~34세 직장인"
                 className={cn(inputCls, "mt-1.5")}
+                required
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">동기</span>
+              <span className="text-meta font-medium text-ink-soft">
+                동기 <span className="text-nogo">*</span>
+              </span>
               <input
                 value={motivation}
                 onChange={(e) => setMotivation(e.target.value)}
                 placeholder="예: 아침 대용식 신제품 기획을 준비 중이에요"
                 className={cn(inputCls, "mt-1.5")}
+                required
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">활용 방안</span>
+              <span className="text-meta font-medium text-ink-soft">
+                활용 방안 <span className="text-nogo">*</span>
+              </span>
               <input
                 value={utilization}
                 onChange={(e) => setUtilization(e.target.value)}
                 placeholder="예: 제품 컨셉과 메시지 방향을 정하는 데 쓸 거예요"
                 className={cn(inputCls, "mt-1.5")}
+                required
               />
             </label>
 
@@ -128,7 +144,7 @@ export function NewProjectForm() {
 
           {formError && <p className="mt-3 text-meta text-nogo">{formError}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="submit" disabled={!purpose.trim() || creating}>
+            <Button type="submit" disabled={!canSubmit || creating}>
               {creating ? "만드는 중…" : "프로젝트 만들기"}
             </Button>
             <Link href="/projects" className={buttonVariants({ variant: "ghost" })}>

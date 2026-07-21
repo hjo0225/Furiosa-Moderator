@@ -15,6 +15,22 @@ def test_material_route_registered():
     assert "/api/projects/{pid}/material" in paths
 
 
+def test_create_project_requires_all_brief_fields(monkeypatch):
+    client = TestClient(main.app)
+    # 일부만 채우면 400 (검증이 store 접근 전에 막는다 — DB 불필요)
+    resp = client.post("/api/projects", json={"topic": "조사 목적만"})
+    assert resp.status_code == 400
+    for name in ("타깃 대상", "동기", "활용 방안"):
+        assert name in resp.json()["detail"]
+    # 4개 다 채우면 통과
+    monkeypatch.setattr(store_mod, "create_project", lambda p: p)
+    ok = client.post(
+        "/api/projects",
+        json={"topic": "목적", "target": "대상", "motivation": "동기", "utilization": "활용"},
+    )
+    assert ok.status_code == 200
+
+
 def test_upload_material_stores_text(monkeypatch):
     saved: dict = {}
     monkeypatch.setattr(store_mod, "get_project", lambda pid: Project(id=pid, topic="주제"))

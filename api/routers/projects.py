@@ -44,9 +44,16 @@ def _require(pid: str) -> Project:
 
 @router.post("", response_model=Project)
 def create_project(body: ProjectCreateIn) -> Project:
-    """C-1 조사 목적·브리프 입력·프로젝트 생성 → 상태=draft."""
-    if not body.topic.strip():
-        raise HTTPException(400, "조사 목적을 입력하세요.")
+    """C-1 조사 브리프 입력·프로젝트 생성 → 상태=draft. 브리프 4개 필드는 모두 필수."""
+    required = {
+        "조사 목적": body.topic,
+        "타깃 대상": body.target,
+        "동기": body.motivation,
+        "활용 방안": body.utilization,
+    }
+    missing = [name for name, v in required.items() if not v.strip()]
+    if missing:
+        raise HTTPException(400, f"{' · '.join(missing)}을(를) 입력하세요.")
     return store.create_project(
         Project(
             topic=body.topic.strip(),
