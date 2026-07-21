@@ -10,9 +10,10 @@ import os
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
-from ..services.material import MaterialError, cap, extract_text
+from ..services.material import SUMMARIZE_THRESHOLD, MaterialError, cap, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
+from ..prompts.material import MATERIAL_SUMMARY_SYSTEM, material_summary_user
 from ..prompts.insight import (
     INSIGHT_SYSTEM,
     SESSION_SUMMARY_SYSTEM,
@@ -96,7 +97,12 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 @router.post("/{pid}/material")
 async def upload_material(pid: str, file: UploadFile) -> dict:
-    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝)."""
+    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝).
+
+    자료가 SUMMARIZE_THRESHOLD 를 넘으면 자르는 대신 LLM 으로 요약해 저장한다
+    (자르면 뒷부분 도메인 맥락이 통째로 사라지므로). 요약이 실패해도 업로드는 죽지 않고
+    cap() 자르기로 후퇴한다.
+    """
     _require(pid)
     raw = await file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
@@ -105,9 +111,21 @@ async def upload_material(pid: str, file: UploadFile) -> dict:
         text = extract_text(file.filename or "", raw)
     except MaterialError as e:
         raise HTTPException(400, str(e)) from e
+
+    summarized = False
+    if len(text) > SUMMARIZE_THRESHOLD:
+        try:
+            text, _ = get_llm().text(
+                MATERIAL_SUMMARY_SYSTEM, material_summary_user(text), max_tokens=2048
+            )
+            summarized = True
+        except LLMError as e:
+            log.warning("자료 요약 실패, 자르기로 후퇴 (project=%s): %s", pid, e)
+
+    # 요약을 건너뛰었거나 요약본이 여전히 길 경우의 최종 상한.
     text, truncated = cap(text)
     store.update_project(pid, {"material_text": text})
-    return {"project_id": pid, "chars": len(text), "truncated": truncated}
+    return {"project_id": pid, "chars": len(text), "truncated": truncated, "summarized": summarized}
 
 
 @router.get("/{pid}/guide", response_model=InterviewGuide)
