@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
@@ -174,4 +175,16 @@ def db_session():
 
 def init_schema() -> None:
     """테이블 생성(멱등). 마이그레이션 도구는 MVP 범위 밖이라 create_all 로 둔다."""
-    Base.metadata.create_all(_engine())
+    eng = _engine()
+    # pgvector — briefing_chunks(TICKET-5)의 전제. 로컬 PG 에 확장이 없어도
+    # 앱은 떠야 하므로 비치명(경고만). Cloud SQL PG15 는 기본 지원.
+    try:
+        with eng.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except Exception:
+        import logging
+
+        logging.getLogger("mindlens").warning(
+            "pgvector 확장 생성 실패 — briefing RAG(TICKET-5) 전까지는 영향 없음", exc_info=True
+        )
+    Base.metadata.create_all(eng)
