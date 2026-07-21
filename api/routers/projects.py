@@ -10,6 +10,7 @@ import os
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
+from ..briefing import pipeline as briefing_pipeline
 from ..services.material import MaterialError, cap, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
@@ -120,6 +121,20 @@ def update_guide(pid: str, body: InterviewGuide) -> InterviewGuide:
         q.order = i
         q.id = q.id or f"q{i + 1}"
     return store.save_guide(pid, body)
+
+
+@router.post("/{pid}/briefing/index")
+def briefing_index(pid: str) -> dict:
+    """업로드 자료를 브리핑 팩으로 인덱싱 (청크→임베딩→pgvector). 멱등."""
+    if not store.get_project(pid):
+        raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+    try:
+        n = briefing_pipeline.index_project(pid)
+    except Exception as e:
+        raise HTTPException(502, f"브리핑 인덱싱에 실패했습니다: {e}") from e
+    if n == 0:
+        raise HTTPException(400, "인덱싱할 업로드 자료가 없습니다.")
+    return {"chunks": n}
 
 
 @router.post("/{pid}/deploy")

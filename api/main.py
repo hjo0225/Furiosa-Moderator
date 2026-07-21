@@ -52,7 +52,7 @@ app.add_middleware(
 _WINDOW = 60.0
 _LIMIT = 30
 _hits: dict[str, deque[float]] = defaultdict(deque)
-_GUARDED = ("/api/public/", "/api/speech/", "/guide", "/insight", "/material")
+_GUARDED = ("/api/public/", "/api/speech/", "/guide", "/insight", "/material", "/briefing")
 
 
 @app.middleware("http")
