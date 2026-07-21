@@ -53,7 +53,7 @@ def speak(state: InterviewState) -> dict:
         "ledger": update_ledger(state.get("ledger", {}), qid, "touched", [], []),
         "covered": covered,
         "asked": asked,
-        "probe_streak": (state.get("probe_streak", 0) + 1) if state.get("is_probe") else 0,
+        "probe_streak": (state.get("probe_streak", 0) + 1) if state.get("action") in ("probe", "clarify") else 0,
         "draft": "",
         # utterance 는 리셋하지 않는다 — 뒤따르는 reflect(슬로우패스)가 읽어야 한다
     }
