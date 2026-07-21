@@ -10,10 +10,8 @@ import {
   generateGuide,
   getGuide,
   saveGuide,
-  uploadMaterial,
   type GuideQuestion,
   type InterviewGuide,
-  type MaterialUploadResult,
   type Project,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -35,76 +33,6 @@ function absoluteUrl(url: string, projectId: string): string {
   if (!url) return `${origin}/i/${projectId}`;
   if (/^https?:\/\//i.test(url)) return url;
   return `${origin}${url.startsWith("/") ? "" : "/"}${url}`;
-}
-
-/** 참고 자료 업로드 카드 — 가이드 생성 전에 도메인 자료를 붙인다. 업로드 후 프로젝트를 새로고침해
- *  material_text 첨부 상태를 반영한다. */
-function MaterialCard({
-  project,
-  onUploaded,
-}: {
-  project: Project;
-  onUploaded: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<MaterialUploadResult | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const hasMaterial = project.material_text.trim().length > 0;
-
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // 같은 파일을 다시 선택할 수 있게 초기화
-    if (!file) return;
-    setBusy(true);
-    setErr(null);
-    setResult(null);
-    try {
-      const r = await uploadMaterial(project.id, file);
-      setResult(r);
-      onUploaded();
-    } catch {
-      setErr("자료 업로드에 실패했어요. .txt / .md / .pdf, 10MB 이하인지 확인해 주세요.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-lead font-medium">
-          참고 자료 <span className="text-meta font-normal text-ink-faint">(선택)</span>
-        </h3>
-        {hasMaterial && (
-          <span className="rounded-sm bg-go/10 px-1.5 py-0.5 font-mono text-2xs text-go">첨부됨</span>
-        )}
-      </div>
-      <p className="mt-1 text-meta text-ink-faint">
-        도메인 자료(.txt · .md · .pdf)를 올리면 그 용어·맥락을 반영해 질문을 만들어요.
-      </p>
-      <label className="mt-3 inline-flex cursor-pointer items-center rounded-full bg-accent-wash px-4 py-2 text-meta font-medium text-accent ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
-        <input
-          type="file"
-          accept=".txt,.md,.pdf"
-          onChange={onPick}
-          disabled={busy}
-          className="hidden"
-        />
-        {busy ? "올리는 중…" : hasMaterial ? "자료 교체" : "자료 올리기"}
-      </label>
-      {result && (
-        <p className="mt-2 text-meta text-go">
-          자료 첨부됨 · {result.chars}자
-          {result.summarized
-            ? " (긴 자료라 요약해 저장했어요)"
-            : result.truncated
-              ? " (8000자 초과분은 잘렸어요)"
-              : ""}
-        </p>
-      )}
-      {err && <p className="mt-2 text-meta text-nogo">{err}</p>}
-    </div>
-  );
 }
 
 export function GuidePanel({
@@ -252,25 +180,20 @@ export function GuidePanel({
 
   if (!guide) {
     return (
-      <div className="space-y-4">
-        <MaterialCard project={project} onUploaded={onProjectChange} />
-        <div className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
-          <p className="text-base text-ink-soft">
-            아직 인터뷰 가이드가 없어요. 주제를 바탕으로 초안을 만들어 드릴게요.
-          </p>
-          {error && <p className="mt-3 text-meta text-nogo">{error}</p>}
-          <Button className="mt-5" onClick={generate} disabled={busy === "generate"}>
-            {busy === "generate" ? "만드는 중…" : "가이드 생성하기"}
-          </Button>
-        </div>
+      <div className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
+        <p className="text-base text-ink-soft">
+          아직 인터뷰 가이드가 없어요. 주제를 바탕으로 초안을 만들어 드릴게요.
+        </p>
+        {error && <p className="mt-3 text-meta text-nogo">{error}</p>}
+        <Button className="mt-5" onClick={generate} disabled={busy === "generate"}>
+          {busy === "generate" ? "만드는 중…" : "가이드 생성하기"}
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <MaterialCard project={project} onUploaded={onProjectChange} />
-
       {/* 조사 목표 */}
       <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
         <label className="block">

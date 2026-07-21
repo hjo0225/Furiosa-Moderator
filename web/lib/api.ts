@@ -11,8 +11,10 @@ export type Project = {
   id: string;
   owner: string;
   title: string;
-  topic: string;
-  target: string;
+  topic: string; // 조사 목적 (UI 라벨: 조사 목적)
+  target: string; // 타깃 대상
+  motivation: string; // 조사 동기
+  utilization: string; // 활용 방안
   material_text: string; // 업로드한 참고 자료 (가이드 생성에 주입). 비어 있으면 미첨부.
   status: ProjectStatus;
   created_at: string;
@@ -132,8 +134,13 @@ const post = <T>(path: string, body?: unknown) =>
 
 // --- 의뢰자 (C-1 ~ C-5) ------------------------------------------------------
 
-export const createProject = (body: { topic: string; title?: string; target?: string }) =>
-  post<Project>("/api/projects", body);
+export const createProject = (body: {
+  topic: string; // 조사 목적
+  title?: string;
+  target?: string; // 타깃 대상
+  motivation?: string; // 조사 동기
+  utilization?: string; // 활용 방안
+}) => post<Project>("/api/projects", body);
 
 export const listProjects = () => request<Project[]>("/api/projects");
 
