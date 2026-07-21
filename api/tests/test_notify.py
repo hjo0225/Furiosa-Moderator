@@ -142,3 +142,32 @@ def test_emit_swallows_post_errors(monkeypatch):
 
     # 예외가 밖으로 새지 않아야 한다 — 실패해도 조용히 반환
     notify.emit_session_completed("p_1", "s_1")
+
+
+def test_submit_schedules_notification(monkeypatch):
+    from fastapi import BackgroundTasks
+    from api.routers import public
+    from api.schemas.models import Session
+
+    sess = Session(id="s_1", project_id="p_1", status="active")
+    monkeypatch.setattr(public.store, "get_session", lambda pid, sid: sess)
+    monkeypatch.setattr(public.store, "update_session", lambda pid, sid, patch: None)
+
+    bt = BackgroundTasks()
+    public.submit("p_1", "s_1", bt)
+
+    assert any(t.func is public.notify.emit_session_completed for t in bt.tasks)
+    assert any(t.args == ("p_1", "s_1") for t in bt.tasks)
+
+
+def test_submit_idempotent_no_duplicate_notification(monkeypatch):
+    from fastapi import BackgroundTasks
+    from api.routers import public
+    from api.schemas.models import Session
+
+    done = Session(id="s_1", project_id="p_1", status="completed")
+    monkeypatch.setattr(public.store, "get_session", lambda pid, sid: done)
+
+    bt = BackgroundTasks()
+    public.submit("p_1", "s_1", bt)
+    assert bt.tasks == []   # 이미 completed — 알림 재발사 금지
