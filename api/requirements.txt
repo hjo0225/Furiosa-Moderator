@@ -9,3 +9,6 @@ sqlalchemy==2.0.36
 pg8000==1.31.2
 cloud-sql-python-connector==1.16.0
 pypdf==5.1.0
+langgraph==1.2.9
+langgraph-checkpoint-postgres==3.1.0
+psycopg[binary]==3.3.4
