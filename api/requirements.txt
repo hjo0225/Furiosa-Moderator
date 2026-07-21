@@ -10,3 +10,4 @@ alembic==1.13.1
 pg8000==1.31.2
 cloud-sql-python-connector==1.16.0
 httpx==0.28.1
+pypdf==5.1.0

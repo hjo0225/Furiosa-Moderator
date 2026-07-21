@@ -8,7 +8,9 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
+
+from ..services.material import MaterialError, cap, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
 from ..prompts.insight import (
@@ -76,7 +78,7 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     target = body.target.strip() or p.target
     try:
         guide, _ = get_llm().structured(
-            GUIDE_SYSTEM, guide_user(topic, target), InterviewGuide, max_tokens=2000
+            GUIDE_SYSTEM, guide_user(topic, target, p.material_text), InterviewGuide, max_tokens=2000
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e
@@ -87,6 +89,25 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
         q.id = q.id or f"q{i + 1}"
     guide.goal = guide.goal or topic
     return store.save_guide(pid, guide)
+
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+
+
+@router.post("/{pid}/material")
+async def upload_material(pid: str, file: UploadFile) -> dict:
+    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝)."""
+    _require(pid)
+    raw = await file.read()
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(400, "파일이 너무 큽니다(최대 10MB).")
+    try:
+        text = extract_text(file.filename or "", raw)
+    except MaterialError as e:
+        raise HTTPException(400, str(e)) from e
+    text, truncated = cap(text)
+    store.update_project(pid, {"material_text": text})
+    return {"project_id": pid, "chars": len(text), "truncated": truncated}
 
 
 @router.get("/{pid}/guide", response_model=InterviewGuide)
