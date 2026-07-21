@@ -1,13 +1,13 @@
-"""n8n 경유 아웃바운드 알림.
+"""아웃바운드 Discord 알림 (직접 웹훅).
 
-응답자가 인터뷰를 제출(completed)할 때 세션의 요약·감정·커버리지·전사 합본을
-n8n 웹훅으로 emit 한다. n8n 이 Discord embed 로 게시한다.
+응답자가 인터뷰를 제출(completed)할 때 세션의 요약·감정·커버리지·전사를
+Discord 채널 웹훅으로 바로 게시한다 (중계 없이 FastAPI → Discord).
 
 원칙: 알림은 본류(인터뷰)를 절대 막지 않는다. 전사는 이미 마스킹된 turns.text 만 쓴다.
+webhook URL 은 시크릿이라 로그에 값을 남기지 않는다.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
 
@@ -21,12 +21,8 @@ from ..services.llm_client import LLMError, get_llm
 
 log = logging.getLogger(__name__)
 
-
-def _respondent_ref(respondent_id: str) -> str:
-    """원 식별자 대신 짧은 해시. 원 식별자·PII 미노출."""
-    if not respondent_id:
-        return ""
-    return hashlib.sha256(respondent_id.encode("utf-8")).hexdigest()[:12]
+# Discord 한도: content 2000, embed description 4096, field value 1024.
+_CONTENT_MAX = 1900   # 코드펜스 여유를 두고 자른다
 
 
 def _transcript(turns: list[Turn]) -> str:
@@ -66,7 +62,10 @@ def _generate_summary(goal: str, transcript: str) -> str | None:
 
 
 def _build_payload(pid: str, sid: str, settings: Settings) -> dict | None:
-    """이벤트 payload 구성. 세션이 없으면 None."""
+    """Discord 웹훅 payload(content + embed) 구성. 세션이 없으면 None.
+
+    응답자 원 식별자는 어디에도 싣지 않는다(PII). 전사는 마스킹된 것뿐.
+    """
     session = store.get_session(pid, sid)
     if not session:
         return None
@@ -81,30 +80,36 @@ def _build_payload(pid: str, sid: str, settings: Settings) -> dict | None:
     if summary:
         store.update_session(pid, sid, {"summary": summary})   # 나중 insight 빌드도 재사용
 
-    total_questions = len(guide.questions) if guide else 0
-    web_base = (settings.public_web_base or "").rstrip("/")
+    total = len(guide.questions) if guide else 0
+    covered = list(session.covered)
+    emotion = _emotion_counts(turns)
+    emo = " · ".join(f"{k} {v}" for k, v in emotion.items()) or "없음"
+    title = project.title if project else ""
 
-    return {
-        "event": "session.completed",
-        "project": {
-            "id": pid,
-            "title": project.title if project else "",
-            "topic": project.topic if project else "",
-        },
-        "session": {
-            "id": sid,
-            "respondent_ref": _respondent_ref(session.respondent_id),
-            "asked": session.asked,
-            "duration_sec": _duration_sec(session),
-        },
-        "metrics": {
-            "emotion": _emotion_counts(turns),
-            "coverage": {"covered": list(session.covered), "total": total_questions},
-        },
-        "summary": summary,
-        "transcript": transcript,
-        "dashboard_url": f"{web_base}/projects/{pid}" if web_base else f"/projects/{pid}",
+    fields = [
+        {"name": "감정", "value": emo, "inline": True},
+        {"name": "커버리지", "value": f"{len(covered)}/{total}", "inline": True},
+        {"name": "진행자 질문", "value": str(session.asked), "inline": True},
+    ]
+    dur = _duration_sec(session)
+    if dur is not None:
+        fields.append({"name": "소요", "value": f"{dur}초", "inline": True})
+
+    embed: dict = {
+        "title": f"새 인터뷰 응답 · {title or pid}",
+        "description": summary or "(요약 없음)",
+        "fields": fields,
     }
+    # embed url 은 절대 URL 일 때만. 상대경로는 Discord 가 400 으로 거부한다.
+    web_base = (settings.public_web_base or "").rstrip("/")
+    if web_base.startswith("http"):
+        embed["url"] = f"{web_base}/projects/{pid}"
+
+    # 전사는 content 로(2000 한도). 코드펜스 여유를 두고 자른다.
+    body = transcript[:_CONTENT_MAX] + ("…" if len(transcript) > _CONTENT_MAX else "")
+    content = f"```\n{body}\n```" if body else ""
+
+    return {"content": content, "embeds": [embed]}
 
 
 _TIMEOUT = 5.0
@@ -112,7 +117,7 @@ _MAX_ATTEMPTS = 3   # 최초 1회 + 2회 재시도
 
 
 def _post(url: str, payload: dict) -> None:
-    """n8n 웹훅으로 POST. 타임아웃·재시도. 최종 실패는 예외로 올린다(호출부가 흡수)."""
+    """Discord 웹훅으로 POST. 타임아웃·재시도. 최종 실패는 예외로 올린다(호출부가 흡수)."""
     last: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
@@ -133,17 +138,17 @@ def emit_session_completed(pid: str, sid: str) -> None:
     알림 실패가 인터뷰를 깨선 안 된다.
     """
     settings = get_settings()
-    if not settings.n8n_webhook_url:
-        log.debug("N8N_WEBHOOK_URL 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
+    if not settings.discord_webhook_url:
+        log.debug("DISCORD_WEBHOOK_URL 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
         return
     try:
         payload = _build_payload(pid, sid, settings)
         if payload is None:
             log.warning("알림 payload 없음 — 세션 미발견 (project=%s session=%s)", pid, sid)
             return
-        _post(settings.n8n_webhook_url, payload)
-        log.info("n8n 알림 전송 (project=%s session=%s)", pid, sid)
+        _post(settings.discord_webhook_url, payload)
+        log.info("Discord 알림 전송 (project=%s session=%s)", pid, sid)
     except Exception as e:   # noqa: BLE001 — 알림은 본류를 막지 않는다
         # 예외 문자열에 webhook URL 이 섞일 수 있어 타입·상태코드만 남긴다(시크릿 노출 금지).
         status = getattr(getattr(e, "response", None), "status_code", "")
-        log.warning("n8n 알림 실패 (project=%s session=%s): %s %s", pid, sid, type(e).__name__, status)
+        log.warning("Discord 알림 실패 (project=%s session=%s): %s %s", pid, sid, type(e).__name__, status)

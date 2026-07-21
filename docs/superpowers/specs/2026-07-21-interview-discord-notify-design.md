@@ -1,7 +1,7 @@
 # 인터뷰 응답 실시간 Discord 알림 (n8n 경유) — 설계
 
 - 날짜: 2026-07-21
-- 상태: 설계 승인됨 → 구현 계획 대기
+- 상태: 구현됨 — **단, 아키텍처 변경: n8n 경유 → 직접 Discord 웹훅** (n8n self-host 운영부담 회피). 아래 n8n 관련 서술은 이력용이며, 실제 구현은 `notify.py` 가 Discord embed 를 직접 만들어 `DISCORD_WEBHOOK_URL` 로 POST 한다.
 - 관련: `api/routers/public.py`(submit) · `api/services/store.py` · `api/prompts/insight.py` · `api/config.py`
 
 ## 목표

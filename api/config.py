@@ -48,9 +48,9 @@ class Settings(BaseModel):
     cors_origins: str = "*"
     max_audio_bytes: int = 10 * 1024 * 1024
 
-    # --- 알림 (n8n → Discord) ------------------------------------------------
-    n8n_webhook_url: str = ""     # 비면 알림 비활성
-    public_web_base: str = ""     # 대시보드 링크 베이스
+    # --- 알림 (Discord) ------------------------------------------------------
+    discord_webhook_url: str = ""   # 비면 알림 비활성
+    public_web_base: str = ""       # 대시보드 링크 베이스
 
 
 @lru_cache
@@ -69,6 +69,6 @@ def get_settings() -> Settings:
         stt_location=env.get("STT_LOCATION", Settings().stt_location),
         stt_model=env.get("STT_MODEL", Settings().stt_model),
         cors_origins=env.get("CORS_ORIGINS", "*"),
-        n8n_webhook_url=env.get("N8N_WEBHOOK_URL", ""),
+        discord_webhook_url=env.get("DISCORD_WEBHOOK_URL", ""),
         public_web_base=env.get("PUBLIC_WEB_BASE", ""),
     )
