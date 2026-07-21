@@ -57,8 +57,10 @@ class Project(BaseModel):
     id: str = ""
     owner: str = "anonymous"     # MVP 무인증 — 링크 소유 기반
     title: str = ""
-    topic: str
-    target: str = ""             # 대상 조건
+    topic: str                   # 조사 목적 (UI 라벨: 조사 목적)
+    target: str = ""             # 타깃 대상
+    motivation: str = ""         # 조사 동기
+    utilization: str = ""        # 활용 방안
     material_text: str = ""      # 의뢰자 업로드 자료 (가이드 생성 프롬프트 주입용)
     discord_webhook_url: str = Field(default="", exclude=True)  # 응답 노출 금지(시크릿). 저장·라우팅엔 사용.
     status: ProjectStatus = "draft"
@@ -68,9 +70,11 @@ class Project(BaseModel):
 
 
 class ProjectCreateIn(BaseModel):
-    topic: str
+    topic: str                   # 조사 목적
     title: str = ""
-    target: str = ""
+    target: str = ""             # 타깃 대상
+    motivation: str = ""         # 조사 동기
+    utilization: str = ""        # 활용 방안
     discord_webhook_url: str = ""
 
     @field_validator("discord_webhook_url")

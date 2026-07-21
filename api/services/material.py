@@ -7,6 +7,10 @@ from __future__ import annotations
 import io
 
 MATERIAL_CHAR_CAP = 8000
+# 이보다 길면 통째 주입 대신 LLM 으로 요약한다(자르면 뒷부분 도메인 맥락이 통째로 사라지므로).
+SUMMARIZE_THRESHOLD = 8000
+# 요약본 목표 길이(대략). 프롬프트 지시용 — 정확한 상한은 cap() 이 최종 보장한다.
+SUMMARY_TARGET_CHARS = 2000
 _TEXT_EXT = (".txt", ".md")
 
 

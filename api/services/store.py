@@ -34,6 +34,7 @@ def new_id(prefix: str = "") -> str:
 def _project(r: ProjectRow, sessions: int = 0, completed: int = 0) -> Project:
     return Project(
         id=r.id, owner=r.owner, title=r.title, topic=r.topic, target=r.target,
+        motivation=r.motivation, utilization=r.utilization,
         material_text=r.material_text, discord_webhook_url=r.discord_webhook_url,
         status=r.status, created_at=r.created_at,
         session_count=sessions, completed_count=completed,
@@ -64,7 +65,8 @@ def create_project(p: Project) -> Project:
     with db_session() as s:
         s.add(ProjectRow(
             id=p.id, owner=p.owner, title=p.title, topic=p.topic,
-            target=p.target, material_text=p.material_text,
+            target=p.target, motivation=p.motivation, utilization=p.utilization,
+            material_text=p.material_text,
             discord_webhook_url=p.discord_webhook_url,
             status=p.status, created_at=p.created_at,
         ))
