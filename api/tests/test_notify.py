@@ -171,3 +171,28 @@ def test_submit_idempotent_no_duplicate_notification(monkeypatch):
     bt = BackgroundTasks()
     public.submit("p_1", "s_1", bt)
     assert bt.tasks == []   # 이미 completed — 알림 재발사 금지
+
+
+def test_emit_does_not_log_webhook_url_on_http_error(monkeypatch, caplog):
+    import logging
+    import httpx
+    from api.services import notify
+    from api.config import Settings
+
+    url = "https://n8n.example/webhook/SECRET-abc123"
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(n8n_webhook_url=url))
+    monkeypatch.setattr(notify, "_build_payload", lambda pid, sid, settings: {"event": "x"})
+    monkeypatch.setattr(notify.time, "sleep", lambda *_: None)
+
+    req = httpx.Request("POST", url)
+    resp = httpx.Response(404, request=req)
+
+    def _boom(u, json, timeout):
+        resp.raise_for_status()   # 실제 httpx 메시지에 URL 이 포함된다
+    monkeypatch.setattr(notify.httpx, "post", _boom)
+
+    with caplog.at_level(logging.WARNING):
+        notify.emit_session_completed("p_1", "s_1")
+
+    assert "SECRET-abc123" not in caplog.text
+    assert url not in caplog.text

@@ -144,4 +144,6 @@ def emit_session_completed(pid: str, sid: str) -> None:
         _post(settings.n8n_webhook_url, payload)
         log.info("n8n 알림 전송 (project=%s session=%s)", pid, sid)
     except Exception as e:   # noqa: BLE001 — 알림은 본류를 막지 않는다
-        log.warning("n8n 알림 실패 (project=%s session=%s): %s", pid, sid, e)
+        # 예외 문자열에 webhook URL 이 섞일 수 있어 타입·상태코드만 남긴다(시크릿 노출 금지).
+        status = getattr(getattr(e, "response", None), "status_code", "")
+        log.warning("n8n 알림 실패 (project=%s session=%s): %s %s", pid, sid, type(e).__name__, status)
