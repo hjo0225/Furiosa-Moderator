@@ -394,3 +394,13 @@ def get_insight(pid: str) -> Insight | None:
             sentiment=dict(r.sentiment or {}), session_count=r.session_count,
             generated_at=r.generated_at,
         )
+
+
+def update_turn(pid: str, sid: str, turn_id: str, patch: dict) -> None:
+    """턴 부분 갱신 — 슬로우패스의 감정 태깅 사후 기입용. 세션 불일치면 무시."""
+    with db_session() as s:
+        row = s.get(TurnRow, turn_id)
+        if row and row.session_id == sid:
+            for k, v in patch.items():
+                setattr(row, k, v)
+            s.commit()

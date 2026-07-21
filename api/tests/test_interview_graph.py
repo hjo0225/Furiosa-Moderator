@@ -360,6 +360,34 @@ def test_opening_turn_skips_reflect(fakes):
     assert llm.outs == [] and llm.structured_prompts == []    # 오프닝은 분석·reflect 콜 없음
 
 
+def test_reflect_emotion_patches_turn(fakes, monkeypatch):
+    from api.interview.nodes import reflect as ref_mod
+    fs, set_llm = fakes
+    patched = {}
+    fs.update_turn = lambda pid, sid, tid, patch: patched.update({tid: patch})
+    monkeypatch.setattr(ref_mod, "store", fs)
+    monkeypatch.setattr(ref_mod, "tag_emotion", lambda t: ("불만", 0.7))
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
+            texts=["오프닝?", "꼬리?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume={"text": "배달비 비싸요", "turn_id": "t_9"}), config)
+    assert patched == {"t_9": {"emotion": "불만", "emotion_confidence": 0.7}}
+
+
+def test_listen_accepts_plain_string_resume(fakes):
+    # 구 체크포인트(문자열 resume) 재개 방어
+    fs, set_llm = fakes
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
+            texts=["오프닝?", "꼬리?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    r = g.invoke(Command(resume="그냥 문자열"), config)
+    assert "__interrupt__" in r                              # 정상 진행
+
+
 # --- T3: 비답변 단락 (엔진) ------------------------------------------------------
 
 def test_non_answer_short_circuits_without_waking_graph(monkeypatch):

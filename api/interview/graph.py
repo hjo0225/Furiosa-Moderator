@@ -13,7 +13,7 @@ from .nodes.farewell import farewell
 from .nodes.generate import generate
 from .nodes.guard import guard
 from .nodes.listen import listen
-from .nodes.reflect import reflect_ledger
+from .nodes.reflect import reflect_emotion, reflect_ledger
 from .nodes.speak import speak
 from .nodes.strategize import strategize
 from .state import InterviewState
@@ -23,7 +23,10 @@ def _after_speak(state: InterviewState):
     if state.get("done"):
         return END
     if state.get("utterance") and state.get("answered_qid"):
-        return [Send("reflect_ledger", state)]       # 슬로우패스 — 사람의 시간에 숨는다
+        sends = [Send("reflect_ledger", state)]      # 슬로우패스 — 사람의 시간에 숨는다
+        if state.get("resp_turn_id"):
+            sends.append(Send("reflect_emotion", state))
+        return sends
     return "listen"                                   # 오프닝 턴 — 정리할 문답이 없다
 
 
@@ -40,6 +43,7 @@ def build_graph(checkpointer):
     g.add_node("speak", speak)
     g.add_node("farewell", farewell)
     g.add_node("reflect_ledger", reflect_ledger)
+    g.add_node("reflect_emotion", reflect_emotion)
     g.add_edge(START, "generate")
     g.add_edge("listen", "strategize")
     g.add_conditional_edges("strategize", _route_action, {"farewell": "farewell", "generate": "generate"})
@@ -48,4 +52,5 @@ def build_graph(checkpointer):
     g.add_edge("farewell", "speak")
     g.add_conditional_edges("speak", _after_speak)
     g.add_edge("reflect_ledger", "listen")
+    g.add_edge("reflect_emotion", "listen")
     return g.compile(checkpointer=checkpointer)

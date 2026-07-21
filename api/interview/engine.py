@@ -13,7 +13,7 @@ from langgraph.types import Command
 
 from ..schemas.models import InterviewGuide, Session, Turn
 from ..services import store
-from ..services.moderator import _question_part, is_non_answer, tag_emotion
+from ..services.moderator import _question_part, is_non_answer
 from ..services.pii import mask_pii, scan_pii
 from .checkpoint import get_checkpointer
 from .graph import build_graph
@@ -81,14 +81,17 @@ def next_turn(
     if text:
         pii_types = scan_pii(text)
         masked = mask_pii(text)
-        emotion, conf = tag_emotion(masked)
+        # emotion 은 슬로우패스(reflect_emotion)가 사후 기입한다 — 여기선 비워서 저장
         respondent_turn = store.add_turn(project_id, sid, Turn(
-            role="respondent", text=masked, emotion=emotion,
-            emotion_confidence=conf, pii_types=pii_types,
+            role="respondent", text=masked, pii_types=pii_types,
         ))
 
     if g.get_state(config).next:          # interrupt 에서 잠들어 있다 → 재개
-        result = g.invoke(Command(resume=masked), config)
+        result = g.invoke(
+            Command(resume={"text": masked,
+                            "turn_id": respondent_turn.id if respondent_turn else ""}),
+            config,
+        )
     else:                                 # 첫 호출 → 그래프 시작(오프닝)
         result = g.invoke(initial_state(project_id, sid, lang, guide, session), config)
 

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import logging
 
+from ...services import store
 from ...services.llm_client import LLMError, get_llm
+from ...services.moderator import tag_emotion
 from ..ledger import update_ledger
 from ..prompts import REFLECT_SYSTEM, ReflectOut, reflect_user
 from ..state import InterviewState
@@ -32,3 +34,15 @@ def reflect_ledger(state: InterviewState) -> dict:
         log.warning("원장 갱신 실패 — 이번 턴은 건너뜀 (다음 턴에 회복): %s", e)
         return {}
     return {"ledger": update_ledger(state.get("ledger", {}), qid, out.coverage, out.facts, out.hooks)}
+
+
+def reflect_emotion(state: InterviewState) -> dict:
+    """감정 태깅 이사 (M-3) — 다음 질문 생성에 미사용이므로 슬로우패스가 제자리."""
+    utterance = state.get("utterance", "")
+    turn_id = state.get("resp_turn_id", "")
+    if not utterance or not turn_id:
+        return {}
+    emotion, conf = tag_emotion(utterance)   # 실패 시 ("중립", 0.0) — 내부에서 처리
+    store.update_turn(state["project_id"], state["session_id"], turn_id,
+                      {"emotion": emotion, "emotion_confidence": conf})
+    return {}
