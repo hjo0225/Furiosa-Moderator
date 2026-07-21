@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ModeratorAvatar } from "@/components/moderator-avatar";
-import { Button } from "@/components/shared";
+import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
 import { sendTurn, submitSession, transcribeAudio } from "@/lib/api";
 import { initialVoiceInput, reduceVoiceInput, type VoiceInputState } from "@/lib/voice-input";
@@ -179,7 +179,7 @@ export function InterviewFlow({
   // --- 시작 전 화면 --------------------------------------------------------
   if (phase === "idle") {
     return (
-      <div className="flex min-h-[26rem] flex-col items-center justify-center gap-5 rounded-2xl bg-surface p-8 text-center shadow-card">
+      <Card className="flex min-h-[26rem] flex-col items-center justify-center gap-5 p-8 text-center">
         <div className="w-32">
           <ModeratorAvatar speaking={false} getLevel={tts.getLevel} />
         </div>
@@ -197,13 +197,13 @@ export function InterviewFlow({
             {en ? "(Voice playback unavailable — text only)" : "(음성 재생 비활성 — 텍스트로 진행)"}
           </p>
         )}
-      </div>
+      </Card>
     );
   }
 
   // --- 인터뷰 화면 (아바타 | 카드) -----------------------------------------
   return (
-    <div className="grid gap-5 rounded-2xl bg-surface p-5 shadow-card sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
+    <Card className="grid gap-5 p-5 sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
       {/* 왼쪽 — 진행자 아바타 */}
       <div className="flex flex-col items-center gap-3">
         <ModeratorAvatar speaking={tts.speaking} getLevel={tts.getLevel} />
@@ -322,7 +322,7 @@ export function InterviewFlow({
                   rows={3}
                   disabled={!canType}
                   placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
-                  className="flex-1 resize-none rounded-lg bg-bg px-3 py-2 text-lead text-ink ring-1 ring-line placeholder:text-ink-faint/60 focus:outline-none focus:ring-accent disabled:opacity-60"
+                  className={fieldClass("flex-1 resize-none text-lead")}
                 />
                 <button
                   type="button"
@@ -337,6 +337,6 @@ export function InterviewFlow({
           </>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
