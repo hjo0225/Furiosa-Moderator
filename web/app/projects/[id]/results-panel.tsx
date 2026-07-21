@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 const STATUS_LABEL: Record<Session["status"], string> = {
   consented: "동의만",
   active: "진행 중",
+  pending: "미제출",
   completed: "완료",
   abandoned: "중단",
 };

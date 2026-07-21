@@ -39,6 +39,10 @@ class Settings(BaseModel):
     firestore_database: str = "(default)"
     tts_voice: str = "ko-KR-Chirp3-HD-Leda"
     stt_language: str = "ko-KR"
+    # chirp_2 는 us-central1 에만 있다. asia-northeast3 에는 STT v2 자체가 없어
+    # 어차피 리전을 맞출 수 없다. 어휘 힌트(adaptation)를 받는 게 훨씬 크다.
+    stt_location: str = "us-central1"
+    stt_model: str = "chirp_2"
 
     # --- 앱 ------------------------------------------------------------------
     cors_origins: str = "*"
@@ -58,5 +62,7 @@ def get_settings() -> Settings:
         embed_api_key=env.get("EMBED_API_KEY", "").lstrip("﻿").strip(),
         rerank_api_key=env.get("RERANK_API_KEY", "").lstrip("﻿").strip(),
         gcp_project=env.get("GCP_PROJECT", "") or env.get("GOOGLE_CLOUD_PROJECT", ""),
+        stt_location=env.get("STT_LOCATION", Settings().stt_location),
+        stt_model=env.get("STT_MODEL", Settings().stt_model),
         cors_origins=env.get("CORS_ORIGINS", "*"),
     )

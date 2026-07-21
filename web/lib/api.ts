@@ -29,7 +29,13 @@ export type InterviewGuide = {
   updated_at: string;
 };
 
-export type SessionStatus = "consented" | "active" | "completed" | "abandoned";
+// pending = 진행자는 마무리했고 응답자의 제출을 기다리는 중. completed 만 '응답 1건'으로 센다.
+export type SessionStatus =
+  | "consented"
+  | "active"
+  | "pending"
+  | "completed"
+  | "abandoned";
 
 export type Session = {
   id: string;
@@ -160,6 +166,11 @@ export const startSession = (pid: string, agreed: boolean, userAgent: string) =>
 /** 발화 1턴 → 진행자의 다음 한 마디. 첫 호출은 text 를 비워 오프닝을 받는다. */
 export const sendTurn = (pid: string, sid: string, text: string, lang = "ko") =>
   post<TurnOut>(`/api/public/projects/${pid}/sessions/${sid}/turn`, { text, lang });
+
+/** 제출 (R-4) — **이 호출이 있어야 '응답 1건'이 된다.** 진행자가 done 을 냈다고 끝난 게 아니다.
+ *  서버에서 멱등하게 처리하므로 중복 클릭·재시도로 실패하지 않는다. */
+export const submitSession = (pid: string, sid: string) =>
+  post<Session>(`/api/public/projects/${pid}/sessions/${sid}/submit`, {});
 
 // --- 음성 -------------------------------------------------------------------
 

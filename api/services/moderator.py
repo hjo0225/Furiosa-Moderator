@@ -11,6 +11,7 @@ M-1(가이드 준수)은 '커버한 문항 id' 를 세션에 누적하는 방식
 from __future__ import annotations
 
 import logging
+import re
 
 from pydantic import BaseModel
 
@@ -27,12 +28,57 @@ log = logging.getLogger(__name__)
 # 응답자를 무한 인터뷰에 가두지 않기 위한 것이다(원본 프롬프트 기준 6~10턴).
 _MAX_ASKED = 12
 
+# 그 자체로는 아무 내용도 없는 발화들. 되묻기 판정에만 쓴다.
+# 의도적으로 **좁게** 잡았다 — 오탐(진짜 답변을 잡음으로 버림)이 미탐(잡음에 되물음)보다
+# 훨씬 나쁘기 때문이다. 버린 답변은 복구할 방법이 없고, 한 번 더 되묻는 건 성가실 뿐이다.
+# 그래서 '글쎄요'(= 모르겠다는 실제 답)나 '별로요' 같은 건 넣지 않았다.
+_FILLERS = {
+    "음", "으음", "어", "어어", "아", "아아", "에", "엄", "흠", "허", "하",
+    "그", "그래", "그래요", "그러네", "그러네요", "그렇죠", "그쵸", "그니까", "그러니까",
+    "네", "넵", "네네", "예", "응", "웅", "옹",
+    "뭐", "저기", "이제", "약간",
+    "uh", "um", "umm", "hmm", "ah", "oh", "yeah", "yes", "ok", "okay",
+}
+
+
+def is_non_answer(text: str) -> bool:
+    """실질적 내용이 없는 발화인가.
+
+    "음, 그래. 그래." 처럼 추임새만 있는 발화가 정상 답변으로 처리되던 걸 막는다. 실측에서
+    이런 발화가 감정 태깅 LLM 호출을 낭비하고, 턴으로 저장되고, _MAX_ASKED 예산을 깎고,
+    모델이 직전 질문을 사과 한마디 없이 거의 그대로 반복하게 만들었다.
+
+    마이크가 TTS 재생음이나 주변음을 주워담으면 이런 게 들어온다.
+    """
+    tokens = [t for t in re.split(r"[\s,.!?…·~\-]+", text.strip()) if t]
+    if not tokens:
+        return True
+    # "어어어", "음음" 같은 늘임은 한 글자로 접어서 본다.
+    return all(re.sub(r"(.)\1+", r"\1", t.lower()) in _FILLERS or t.lower() in _FILLERS
+               for t in tokens)
+
+
+def _question_part(text: str) -> str:
+    """진행자 발화에서 질문 문장만 뽑는다.
+
+    되물을 때 "안녕하세요! ..." 인사까지 되풀이하면 더 어색해진다. 마지막 물음표 문장,
+    없으면 마지막 문장만 쓴다.
+    """
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text.strip()) if p.strip()]
+    if not parts:
+        return text.strip()
+    return next((p for p in reversed(parts) if p.endswith("?")), parts[-1])
+
 
 class _ModeratorOut(BaseModel):
     message: str
     done: bool = False
     question_id: str = ""   # 이번 발화가 다루는 가이드 문항
     is_probe: bool = False  # 꼬리질문이면 True
+    # 꼬리질문의 종류 — 표면 사례를 끌어내면 '구체화', 이유·동기·감정으로 내려가면 '심화'.
+    # 아직 저장하지 않는다(turns 에 컬럼이 없다). 모델이 스스로 분류하게 해 래더링을 유도하고,
+    # 로그로만 관찰한다. 대시보드 지표로 쓰려면 그때 컬럼을 붙인다.
+    probe_type: str = ""
 
 
 class _Emotion(BaseModel):
@@ -69,10 +115,18 @@ def _moderator_user(guide: InterviewGuide, history: list[Turn], asked: int, cove
     covered_block = ", ".join(covered) or "(없음)"
 
     if not history:
+        # 첫 턴에는 **문항 하나만** 보여준다. 목록 전체를 넘겼더니 모델이 앞의 3개를 한
+        # 발화로 합쳐 던졌다(실측: "어떤 목적으로? / 어떤 앱을? / 왜 그 앱을?" = q1+q2+q3).
+        # 시스템 프롬프트의 '한 번에 질문 하나만' 은 눈앞의 목록을 이기지 못한다.
+        first = remaining[0] if remaining else None
+        first_block = (
+            f"- {first.id}: {first.text} (알아낼 것: {first.goal})" if first else "(문항 없음)"
+        )
         return (
             f"[조사 목표]\n{guide.goal or '(목표 미기재)'}\n\n"
-            f"[첫 문항]\n{remaining_block}\n\n"
-            "인터뷰의 첫 턴입니다. 따뜻하게 인사하고 위 첫 문항으로 가볍게 시작하세요. "
+            f"[첫 문항]\n{first_block}\n\n"
+            "인터뷰의 첫 턴입니다. 따뜻하게 인사하고 **위 문항 하나만** 물어보세요. "
+            "나머지 문항은 다음 턴들에서 다루니 여러 개를 묶어 던지지 마세요. "
             "question_id 에 그 문항 id 를, is_probe=false, done=false 로 하세요."
         )
 
@@ -81,13 +135,17 @@ def _moderator_user(guide: InterviewGuide, history: list[Turn], asked: int, cove
         f"[지금까지 대화] (진행자 질문 {asked}회)\n{convo}\n\n"
         f"[응답자의 직전 답변]\n{last_answer or '(없음)'}\n\n"
         "먼저 직전 답변을 판단하세요.\n"
-        f"직전 답변에 구체적 사례·감정·이유가 걸려 있는데 아직 캐묻지 않았다면 "
-        f"**꼬리질문을 하는 것이 기본값입니다**(is_probe=true, question_id 는 지금 문항 유지). "
-        "'배달비가 부담된다' 같은 답에는 '어느 정도일 때 부담스럽게 느껴지세요?', "
-        "'그럴 때는 어떻게 하세요?' 처럼 그 답 안으로 한 단계 더 들어가세요. "
-        "답을 못 들은 채 다음 문항으로 넘어가지 마세요.\n"
-        f"(지금 이 문항에서 연속 {probe_streak}회 파고들었습니다. 2회를 넘겼거나 "
-        "답이 짧고 더 나올 게 없어 보이면 다음 문항으로 넘어가세요 — is_probe=false.)\n\n"
+        "직전 답변에 구체적 사례·감정·이유가 걸려 있는데 아직 캐묻지 않았다면 "
+        "**꼬리질문을 하는 것이 기본값입니다**(is_probe=true, question_id 는 지금 문항 유지).\n"
+        f"- 지금 이 문항에서 연속 {probe_streak}회 파고들었습니다. 아직 표면(무엇을·어떤)에 "
+        "머물러 있으면 구체적 사례를 끌어내고(probe_type=구체화), 구체적 사례가 이미 나왔으면 "
+        "그 밑의 이유·동기·감정으로 한 단계 더 내려가세요(probe_type=심화). '배달비가 부담된다'에는 "
+        "'어느 정도일 때 부담스럽게 느껴지세요?' → '그럴 때는 어떻게 하세요?'처럼 답 안으로 들어갑니다.\n"
+        "- 단, 동기·감정·가치까지 내려가 더 캘 게 없거나, 2회를 넘겼거나, 답이 짧아 나올 게 "
+        "없어 보이면 다음 문항으로 넘어가세요(is_probe=false).\n"
+        "- 다음 문항으로 넘어갈 때, 앞선 답변과 자연스럽게 연결되는 지점이 있으면 그걸 실마리로 "
+        "이으세요(콜백: '아까 …라고 하셨는데'). 단 **응답자가 실제로 한 말만** 가져오고, "
+        "없으면 억지로 만들지 마세요.\n\n"
         f"[아직 다루지 않은 문항] (넘어갈 때만 참고)\n{remaining_block or '(전부 다룸)'}\n"
         f"[이미 다룬 문항] {covered_block}\n\n"
         "남은 문항이 없고 충분히 들었으면 done=true, message 에는 감사 인사로 마무리하는 한 마디를 쓰세요."
@@ -113,8 +171,27 @@ def next_turn(
     sid = session.id
     respondent_turn: Turn | None = None
 
-    # 1) 응답자 발화 — 저장 전에 마스킹한다(PRD 9절). 마스킹된 텍스트로 이후 전부 진행.
     text = (respondent_text or "").strip()
+
+    # 0) 무의미 발화는 턴으로 치지 않는다 — 저장 전에 판정한다.
+    #    아무것도 저장하지 않고 되묻기만 한다: 잡음이 전사에 남지 않고, asked 예산도 안 깎이고,
+    #    커버리지도 그대로다. 대화 상태를 건드리지 않으니 그냥 '한 번 더 물은' 셈이 된다.
+    #    text 가 비어 있는 건 오프닝 요청 신호(public.turn 첫 호출)라 여기서 걸러선 안 된다.
+    if text and is_non_answer(text):
+        prev = next(
+            (t for t in reversed(store.list_turns(project_id, sid)) if t.role == "moderator"),
+            None,
+        )
+        if prev and prev.text:
+            log.info("무의미 발화 — 되묻는다 (session=%s): %r", sid, text[:40])
+            message = f"앗, 잘 못 들었어요. 다시 여쭤볼게요. {_question_part(prev.text)}"
+            # 저장하지 않는 임시 턴이다. 호출자는 플래그만 읽는다.
+            return message, False, None, Turn(
+                role="moderator", text=message, question_id=prev.question_id
+            )
+        # 되물을 직전 질문이 없으면(첫 턴 등) 평소 경로로 흘려보낸다.
+
+    # 1) 응답자 발화 — 저장 전에 마스킹한다(PRD 9절). 마스킹된 텍스트로 이후 전부 진행.
     if text:
         pii_types = scan_pii(text)
         masked = mask_pii(text)
@@ -150,6 +227,11 @@ def next_turn(
     message = (out.message or "").strip()
     done = bool(out.done)
 
+    # 프로빙 종류는 아직 저장하지 않는다(컬럼 없음) — 로그로만 관찰한다. 래더링이 실제로
+    # '심화'까지 내려가는지, 아니면 '구체화'에서만 맴도는지 여기서 드러난다.
+    if out.is_probe and out.probe_type:
+        log.info("프로빙 (session=%s, 종류=%s)", sid, out.probe_type)
+
     # 안전장치 — 모델이 종료를 안 내도 무한 인터뷰는 막는다.
     if asked + 1 >= _MAX_ASKED:
         done = True
@@ -182,10 +264,10 @@ def next_turn(
         covered.append(out.question_id)
     patch: dict = {"asked": asked + 1, "covered": covered, "status": "active"}
     if done:
-        from datetime import datetime, timezone
-
-        patch["status"] = "completed"
-        patch["ended_at"] = datetime.now(timezone.utc)
+        # 진행자가 마무리했다고 '응답 1건'이 되는 게 아니다. 응답자가 제출해야 completed 로
+        # 넘어간다(public.submit). ended_at 도 그때 찍는다 — 여기서 찍으면 제출 안 한 세션에
+        # 종료시각이 남아 완료된 것처럼 보인다.
+        patch["status"] = "pending"
     store.update_session(project_id, sid, patch)
     session.covered = covered
     session.asked = asked + 1

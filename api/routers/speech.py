@@ -26,12 +26,26 @@ class SynthesizeIn(BaseModel):
 
 
 @router.post("/transcribe", response_model=TranscribeOut)
-async def transcribe(file: UploadFile = File(...), lang: str = Form("ko-KR")) -> TranscribeOut:
+async def transcribe(
+    file: UploadFile = File(...),
+    lang: str = Form("ko-KR"),
+    project_id: str = Form(""),
+) -> TranscribeOut:
     audio = await file.read()
     if (reason := speech.guard_audio(file.content_type, len(audio))):
         raise HTTPException(400, reason)
 
-    text, ok = speech.transcribe(audio, mime=file.content_type or "audio/webm", lang=lang)
+    # 이 조사에서 나올 어휘를 STT 에 넘긴다. 주제를 아는 건 우리뿐이고 STT 는 모른다.
+    # project_id 가 없으면 힌트 없이 진행한다 — 인식을 막을 이유는 없다.
+    vocabulary: list[str] = []
+    if project_id:
+        guide = store.get_guide(project_id)
+        if guide:
+            vocabulary = list(guide.vocabulary)
+
+    text, ok = speech.transcribe(
+        audio, mime=file.content_type or "audio/webm", lang=lang, vocabulary=vocabulary
+    )
     if not ok:
         # 엔진 실패는 502 로 올린다. 프런트의 '전사 2회 실패 → 텍스트 폴백' 이 여기에 걸린다.
         raise HTTPException(502, "음성 인식에 실패했습니다. 텍스트로 입력해 주세요.")

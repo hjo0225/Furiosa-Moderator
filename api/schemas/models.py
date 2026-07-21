@@ -31,6 +31,10 @@ class InterviewGuide(BaseModel):
     project_id: str = ""
     goal: str = ""          # 조사 전체 목표
     questions: list[GuideQuestion] = Field(default_factory=list)
+    # STT 어휘 힌트. 이 조사에서 나올 법한 고유명사·전문용어를 담는다.
+    # 조사 주제를 아는 건 우리뿐이고 STT 는 모른다 — 실측으로 '배달팁'이 '배달 TV'로
+    # 나오던 게 이 힌트만으로 정확히 잡혔다(WER 46% → 8%).
+    vocabulary: list[str] = Field(default_factory=list)
     version: int = 1
     updated_at: datetime = Field(default_factory=_now)
 
@@ -61,7 +65,16 @@ class GuideGenerateIn(BaseModel):
 
 # --- 응답자 -----------------------------------------------------------------
 
-SessionStatus = Literal["consented", "active", "completed", "abandoned"]
+# 세션 수명주기:
+#   consented — 동의만 누르고 아직 한 마디도 안 함
+#   active    — 대화 중
+#   pending   — 진행자가 마무리했고 응답자의 '제출'을 기다리는 중
+#   completed — 제출 완료. **이것만 '응답 1건'으로 센다**
+#   abandoned — 이탈. 오래 방치된 미제출 세션을 스윕해서 떨군다
+#
+# completed 를 제출 시점으로 미룬 이유: 진행자가 done 을 냈다고 응답자가 끝낸 게 아니다.
+# 예전엔 동의 클릭만으로도 '응답 1건'이 잡혀서 대시보드 숫자가 인사이트 모수와 어긋났다.
+SessionStatus = Literal["consented", "active", "pending", "completed", "abandoned"]
 
 
 class ConsentLog(BaseModel):

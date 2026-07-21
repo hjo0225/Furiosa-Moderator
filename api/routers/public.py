@@ -67,9 +67,6 @@ def turn(pid: str, sid: str, body: TurnIn) -> TurnOut:
     except LLMError as e:
         raise HTTPException(502, f"인터뷰 진행에 실패했습니다: {e}") from e
 
-    if done:
-        store.bump_project_counter(pid, "completed_count")
-
     return TurnOut(
         message=message,
         done=done,
@@ -78,3 +75,28 @@ def turn(pid: str, sid: str, body: TurnIn) -> TurnOut:
         guardrail_rewritten=mod_turn.guardrail_rewritten,
         emotion="",
     )
+
+
+@router.post("/{pid}/sessions/{sid}/submit", response_model=Session)
+def submit(pid: str, sid: str) -> Session:
+    """R-4 제출 — 이 시점에야 '응답 1건'이 된다.
+
+    진행자가 done 을 냈다고 세션이 완료된 게 아니다. 응답자가 직접 제출해야 completed 로
+    넘어가고 집계·인사이트 모수에 들어간다. 중간에 그만두고 제출하는 것도 허용한다(active).
+    """
+    session = store.get_session(pid, sid)
+    if not session:
+        raise HTTPException(404, "세션을 찾을 수 없습니다.")
+    if session.status == "completed":
+        return session   # 멱등 — 재전송·중복 클릭으로 실패시키지 않는다
+    if session.status not in ("active", "pending"):
+        # consented(한 마디도 안 함) / abandoned — 제출할 답변이 없다.
+        raise HTTPException(400, "제출할 답변이 없습니다.")
+
+    from datetime import datetime, timezone
+
+    store.update_session(
+        pid, sid, {"status": "completed", "ended_at": datetime.now(timezone.utc)}
+    )
+    log.info("세션 제출 완료 (project=%s session=%s)", pid, sid)
+    return store.get_session(pid, sid) or session

@@ -33,8 +33,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
   useEffect(reload, [reload]);
 
   // 이미 응답이 쌓여 있으면 결과 탭을 먼저 보여준다.
+  // 제출 완료 기준이다 — 진행중인 세션으로 열면 아무것도 없는 결과 화면이 첫 화면이 된다.
   useEffect(() => {
-    if (project && project.session_count > 0) setTab("results");
+    if (project && project.completed_count > 0) setTab("results");
   }, [project]);
 
   return (
@@ -70,7 +71,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
               <p className="mt-0.5 text-meta text-ink-faint">대상 · {project.target}</p>
             )}
             <p className="mt-2 font-mono text-2xs text-ink-faint">
-              응답 {project.session_count}건 · 완료 {project.completed_count}건
+              응답 {project.completed_count}건
+              {project.session_count > project.completed_count &&
+                ` · 진행중 ${project.session_count - project.completed_count}건`}
             </p>
 
             {/* 탭 */}

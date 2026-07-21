@@ -150,8 +150,11 @@ export function ProjectsView() {
                     </div>
                     <p className="mt-1 text-meta text-ink-soft">{p.topic}</p>
                     <p className="mt-2 font-mono text-2xs text-ink-faint">
-                      {formatDate(p.created_at)} · 응답 {p.session_count}건 · 완료{" "}
-                      {p.completed_count}건
+                      {/* '응답'은 제출 완료 기준이다. session_count 는 발화한 세션이라
+                          둘의 차가 아직 제출하지 않은 진행중 인원이 된다. */}
+                      {formatDate(p.created_at)} · 응답 {p.completed_count}건
+                      {p.session_count > p.completed_count &&
+                        ` · 진행중 ${p.session_count - p.completed_count}건`}
                     </p>
                   </Link>
                 </li>

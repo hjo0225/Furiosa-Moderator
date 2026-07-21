@@ -28,6 +28,10 @@ _ALLOWED_MIME = (
     "audio/aac",
 )
 
+# adaptation 문구 수·부스트. 부스트를 너무 올리면 없는 말도 그 단어로 끌어당긴다.
+_MAX_PHRASES = 40
+_PHRASE_BOOST = 18.0
+
 _SPELLFIX_SYSTEM = (
     "당신은 음성인식(STT) 결과의 표기를 교정합니다.\n"
     "**의미와 어휘를 바꾸지 마세요.** 맞춤법·띄어쓰기·문장부호 표기만 교정합니다.\n"
@@ -82,18 +86,44 @@ def normalize_lang(lang: str | None) -> str:
     return _LANG_ALIAS.get(v.lower(), v)
 
 
-def transcribe(audio: bytes, *, mime: str = "audio/webm", lang: str | None = None) -> tuple[str, bool]:
+def looks_hallucinated(text: str) -> bool:
+    """같은 구절이 병적으로 반복되면 환각으로 본다.
+
+    chirp_2 는 알아들을 수 없는 오디오를 받으면 빈 값을 주는 대신 한 구절을 수십 번
+    반복해 뱉는 실패 모드가 있다(실측: "1000원 정도 되면"이 30회 이상 반복).
+    정성조사에서 지어낸 답변이 응답자 발언으로 저장되는 건 인식 실패보다 훨씬 나쁘다.
+    """
+    words = text.split()
+    if len(words) < 12:
+        return False
+    trigrams = [" ".join(words[i:i + 3]) for i in range(len(words) - 2)]
+    if not trigrams:
+        return False
+    top = max(set(trigrams), key=trigrams.count)
+    return trigrams.count(top) >= 5
+
+
+def transcribe(
+    audio: bytes,
+    *,
+    mime: str = "audio/webm",
+    lang: str | None = None,
+    vocabulary: list[str] | None = None,
+) -> tuple[str, bool]:
     """음성 → 텍스트. 반환 (전사, 성공여부).
 
     성공여부가 False 면 엔진이 실패한 것이다. 빈 전사와 반드시 구별해서 다뤄야 한다.
 
-    모델은 "long" 을 쓴다. "short" 는 실측에서 두 문장짜리 발화의 **뒷문장을 조용히 버렸다**
-    ("배달비가 비싸서 부담됩니다. 포장하러 갑니다." → 앞 문장만 반환). 인터뷰 답변은
-    한 문장으로 끝나지 않으므로 short 는 쓸 수 없다. 에러가 아니라 데이터가 사라지는 쪽이라
-    더 위험하다.
+    모델·위치 선택 근거(실측):
+      - "short" 는 두 문장짜리 발화의 뒷문장을 조용히 버렸다. 데이터가 사라지는 쪽이라 못 쓴다.
+      - "long"(global) 은 온전히 받아적지만 도메인 어휘를 자주 틀린다('배달팁'→'배달 TV').
+        게다가 speech adaptation 을 아예 거부한다(400).
+      - "chirp_2"(us-central1) 는 adaptation 을 받고, 어휘 힌트를 주면 오인식이 급감했다
+        (WER 46% → 8%). asia-northeast3 에는 STT v2 엔드포인트가 없어 리전을 못 맞춘다.
 
-    위치는 "global" 이다 — asia-northeast3 에는 STT v2 엔드포인트가 없다.
+    vocabulary 는 인터뷰 가이드에서 온다 — 조사 주제를 아는 건 우리뿐이고 STT 는 모른다.
     """
+    from google.api_core.client_options import ClientOptions
     from google.cloud import speech_v2
     from google.cloud.speech_v2.types import cloud_speech
 
@@ -102,22 +132,42 @@ def transcribe(audio: bytes, *, mime: str = "audio/webm", lang: str | None = Non
         log.error("GCP_PROJECT 미설정 — STT 불가")
         return "", False
 
+    loc, model = s.stt_location, s.stt_model
     try:
-        client = speech_v2.SpeechClient()
+        opts = ClientOptions(api_endpoint=f"{loc}-speech.googleapis.com") if loc != "global" else None
+        client = speech_v2.SpeechClient(client_options=opts)
+
+        extra: dict = {}
+        terms = [t.strip() for t in (vocabulary or []) if t and t.strip()][:_MAX_PHRASES]
+        if terms:
+            extra["adaptation"] = cloud_speech.SpeechAdaptation(
+                phrase_sets=[
+                    cloud_speech.SpeechAdaptation.AdaptationPhraseSet(
+                        inline_phrase_set=cloud_speech.PhraseSet(
+                            phrases=[
+                                cloud_speech.PhraseSet.Phrase(value=t, boost=_PHRASE_BOOST)
+                                for t in terms
+                            ]
+                        )
+                    )
+                ]
+            )
+
         config = cloud_speech.RecognitionConfig(
             auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
             language_codes=[normalize_lang(lang)],
-            model="long",
+            model=model,
             features=cloud_speech.RecognitionFeatures(enable_automatic_punctuation=True),
+            **extra,
         )
         req = cloud_speech.RecognizeRequest(
-            recognizer=f"projects/{s.gcp_project}/locations/global/recognizers/_",
+            recognizer=f"projects/{s.gcp_project}/locations/{loc}/recognizers/_",
             config=config,
             content=audio,
         )
         resp = client.recognize(request=req)
     except Exception as e:  # 엔진 실패는 반드시 False 로 올린다
-        log.exception("STT 실패: %s", e)
+        log.exception("STT 실패 (model=%s loc=%s): %s", model, loc, e)
         return "", False
 
     parts = [
@@ -125,7 +175,13 @@ def transcribe(audio: bytes, *, mime: str = "audio/webm", lang: str | None = Non
         for r in resp.results
         if r.alternatives and r.alternatives[0].transcript
     ]
-    return " ".join(parts).strip(), True
+    text = " ".join(parts).strip()
+
+    if looks_hallucinated(text):
+        log.warning("STT 환각 반복 감지 — 실패로 처리한다")
+        return "", False
+
+    return text, True
 
 
 def synthesize(text: str, *, voice: str | None = None) -> bytes:

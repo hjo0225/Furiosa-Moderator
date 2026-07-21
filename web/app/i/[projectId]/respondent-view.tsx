@@ -12,7 +12,6 @@ import {
   startSession,
   type PublicProject,
   type Session,
-  type TranscriptTurn,
 } from "@/lib/api";
 
 type Stage = "consent" | "interview" | "done";
@@ -49,8 +48,8 @@ export function RespondentView({ projectId }: { projectId: string }) {
     }
   }
 
-  function handleComplete(transcript: TranscriptTurn[]) {
-    setTurnCount(transcript.filter((t) => t.role === "respondent").length);
+  function handleComplete(answerCount: number) {
+    setTurnCount(answerCount);
     setStage("done");
   }
 
@@ -163,7 +162,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
             <p className="text-3xl" aria-hidden>
               ✅
             </p>
-            <h1 className="mt-4 text-title">인터뷰가 끝났어요</h1>
+            <h1 className="mt-4 text-title">제출됐어요</h1>
             <p className="mt-3 text-base leading-relaxed text-ink-soft">
               시간 내어 답변해 주셔서 감사합니다.
               {turnCount > 0 && ` 총 ${turnCount}개의 답변을 남겨주셨어요.`}

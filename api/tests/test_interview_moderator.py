@@ -12,8 +12,21 @@ from api.prompts.interview_moderator import (
     interview_moderator_system,
     interview_moderator_user,
 )
+from api.schemas.models import GuideQuestion, InterviewGuide
 from api.services.guardrail import precheck
+from api.services.moderator import _moderator_user, _question_part, is_non_answer
 from api.services.pii import mask_pii, scan_pii
+
+
+def _guide() -> InterviewGuide:
+    return InterviewGuide(
+        goal="배달앱 사용 경험 파악",
+        questions=[
+            GuideQuestion(id="q1", text="배달앱을 주로 어떤 목적으로 쓰세요?", goal="사용 맥락", order=0),
+            GuideQuestion(id="q2", text="어떤 앱을 자주 쓰세요?", goal="앱 선택", order=1),
+            GuideQuestion(id="q3", text="왜 그 앱을 고르셨어요?", goal="선택 이유", order=2),
+        ],
+    )
 
 
 # --- 모더레이터 프롬프트 ------------------------------------------------------
@@ -114,3 +127,90 @@ def test_precheck_passes_neutral_questions():
 
 def test_precheck_handles_empty():
     assert precheck("") is None
+
+
+# --- 오프닝은 문항 하나만 (회귀) ----------------------------------------------
+
+def test_first_turn_shows_only_the_first_question():
+    """첫 턴 프롬프트에 문항 목록 전체가 실려 모델이 q1~q3 을 한 발화로 합쳐 던졌다."""
+    u = _moderator_user(_guide(), [], 0, [])
+    assert "q1" in u
+    assert "q2" not in u and "q3" not in u
+    assert "하나만" in u
+
+
+def test_later_turns_still_list_remaining_questions():
+    """뒤 턴에서는 '넘어갈 때 참고'로 남은 문항이 계속 보여야 한다."""
+    from api.schemas.models import Turn
+
+    history = [
+        Turn(role="moderator", text="배달앱을 주로 어떤 목적으로 쓰세요?", question_id="q1"),
+        Turn(role="respondent", text="야근할 때 주로 시켜요"),
+    ]
+    u = _moderator_user(_guide(), history, 1, ["q1"])
+    assert "q2" in u and "q3" in u
+    assert "야근할 때 주로 시켜요" in u
+
+
+# --- 무의미 발화 판정 ---------------------------------------------------------
+
+def test_non_answer_detects_fillers():
+    for t in ["음, 그래. 그래.", "어어어", "네네", "음...", "아 네", "um, yeah", "  "]:
+        assert is_non_answer(t), t
+
+
+def test_non_answer_keeps_real_answers():
+    """오탐이 미탐보다 나쁘다 — 짧아도 내용이 있으면 답변으로 남겨야 한다."""
+    for t in ["배민이요", "네 자주 써요", "글쎄요", "별로요", "한 3만원?",
+              "음 저는 주로 점심에 시켜요"]:
+        assert not is_non_answer(t), t
+
+
+def test_submit_route_registered():
+    import api.main as m
+
+    paths = {r.path for r in m.app.routes if hasattr(r, "path")}
+    assert "/api/public/projects/{pid}/sessions/{sid}/submit" in paths
+
+
+# --- 완료는 '제출' 시점이다 (회귀) --------------------------------------------
+
+def test_done_marks_pending_not_completed(monkeypatch):
+    """진행자가 done 을 내도 completed 가 되면 안 된다 — 제출해야 응답 1건이다.
+
+    예전엔 여기서 바로 completed + ended_at 을 찍어, 응답자가 창을 닫아버린 세션도
+    완료로 집계됐다.
+    """
+    from api.schemas.models import Session, Turn
+    from api.services import moderator as mod
+
+    patches: dict = {}
+
+    monkeypatch.setattr(mod.store, "list_turns", lambda *a, **k: [
+        Turn(role="moderator", text="어떤 목적으로 쓰세요?", question_id="q1"),
+        Turn(role="respondent", text="야근할 때 주로 시켜요"),
+    ])
+    monkeypatch.setattr(mod.store, "add_turn", lambda pid, sid, t: t)
+    monkeypatch.setattr(mod.store, "update_session", lambda pid, sid, patch: patches.update(patch))
+    monkeypatch.setattr(mod, "tag_emotion", lambda text: ("중립", 0.0))
+    monkeypatch.setattr(mod.guardrail, "ensure_neutral", lambda m: (m, False, ""))
+
+    class _FakeLLM:
+        def structured(self, system, user, model, **kw):
+            return model(message="말씀 감사합니다.", done=True, question_id="q1"), {}
+
+    monkeypatch.setattr(mod, "get_llm", lambda: _FakeLLM())
+
+    session = Session(id="s_1", project_id="p_1", status="active")
+    _msg, done, _r, _m = mod.next_turn("p_1", session, _guide(), "충분히 말했어요")
+
+    assert done is True
+    assert patches["status"] == "pending"
+    assert "ended_at" not in patches   # 종료시각은 제출할 때 찍는다
+
+
+def test_question_part_drops_the_greeting():
+    """되물을 때 인사까지 되풀이하면 더 어색하다."""
+    op = "안녕하세요! 오늘은 배달앱 경험을 여쭤볼게요. 배달앱을 주로 어떤 목적으로 쓰세요?"
+    assert _question_part(op) == "배달앱을 주로 어떤 목적으로 쓰세요?"
+    assert _question_part("조금만 더 들려주세요.") == "조금만 더 들려주세요."

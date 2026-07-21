@@ -27,11 +27,107 @@ export type TtsSettings = {
 const TTS_KEY = "mindlens:ttsSettings";
 const DEFAULT_TTS: TtsSettings = { voiceName: "", speakingRate: 1, volumeGainDb: 0 };
 
+// 무음 WAV — 오디오 재생 권한을 '사용자 제스처 순간에' 확보(unlock)하는 용도로만 쓴다.
+// 첫 진행자 음성은 LLM 생성이 끝난 뒤에야 play() 가 호출돼 클릭 제스처 창을 벗어난다.
+// 그래서 클릭 시점에 이 무음을 같은 엘리먼트로 한 번 재생해 재생 권한을 얻어 둔다.
+let _silentUrl: string | null = null;
+function silentWavUrl(): string {
+  if (_silentUrl) return _silentUrl;
+  const rate = 8000;
+  const samples = 400; // 0.05초
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const put = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+  put(0, "RIFF");
+  v.setUint32(4, 36 + samples, true);
+  put(8, "WAVE");
+  put(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true); // byte rate (8-bit mono = rate)
+  v.setUint16(32, 1, true); // block align
+  v.setUint16(34, 8, true); // 8-bit
+  put(36, "data");
+  v.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8-bit 무음 = 128
+  _silentUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  return _silentUrl;
+}
+
 export function useTts(locale: string) {
   const [voices, setVoices] = useState<SpeechVoice[]>([]);
   const [settings, setSettingsState] = useState<TtsSettings>(DEFAULT_TTS);
   const [speaking, setSpeaking] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const srcUrlRef = useRef<string | null>(null); // 현재 mp3 blob URL — 교체·언마운트 시 revoke
+  const unlockedRef = useRef(false);
+  // 아바타 진폭 분석용 WebAudio 그래프. 재생 오디오 → analyser → 스피커.
+  const ctxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const srcNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const levelBufRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+
+  // 재생 엘리먼트는 하나를 재사용한다 — 매번 new Audio() 를 만들면 unlock 으로 얻은 권한이 날아간다.
+  const element = useCallback(() => {
+    if (!audioRef.current) audioRef.current = new Audio();
+    return audioRef.current;
+  }, []);
+
+  // WebAudio 그래프 준비. AudioContext 는 자동재생 정책상 제스처 안에서 만들어야 해서 unlock 에서 부른다.
+  const ensureGraph = useCallback(() => {
+    if (ctxRef.current) return;
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = new Ctor();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    ctxRef.current = ctx;
+    analyserRef.current = analyser;
+  }, []);
+
+  /** 사용자 제스처(클릭) 안에서 호출 — 무음을 한 번 재생해 재생 권한을, AudioContext 를 함께 확보한다. */
+  const unlock = useCallback(() => {
+    ensureGraph();
+    void ctxRef.current?.resume();
+    if (unlockedRef.current) return;
+    unlockedRef.current = true; // 재진입 방지. 실패해도 speak 는 계속 시도한다.
+    try {
+      const audio = element();
+      audio.src = silentWavUrl();
+      audio.play().then(
+        () => {
+          audio.pause();
+          audio.currentTime = 0;
+        },
+        () => {
+          /* 제스처가 아니었거나 정책상 거부 — speak 에서 다시 시도한다 */
+        },
+      );
+    } catch {
+      /* 무시 */
+    }
+  }, [element, ensureGraph]);
+
+  /** 현재 재생 음량 0~1. 아바타가 rAF 로 매 프레임 읽어 움직임을 구동한다. */
+  const getLevel = useCallback(() => {
+    const an = analyserRef.current;
+    if (!an) return 0;
+    const buf =
+      levelBufRef.current ?? (levelBufRef.current = new Uint8Array(new ArrayBuffer(an.fftSize)));
+    an.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128; // -1~1
+      sum += v * v;
+    }
+    return Math.min(1, Math.sqrt(sum / buf.length) * 3.2); // RMS × 게인
+  }, []);
 
   // 설정 복원(최초 1회)
   useEffect(() => {
@@ -69,8 +165,8 @@ export function useTts(locale: string) {
   }, [locale]);
 
   const stop = useCallback(() => {
+    // 엘리먼트는 null 로 버리지 않는다 — unlock 으로 얻은 재생 권한을 유지해야 한다.
     audioRef.current?.pause();
-    audioRef.current = null;
     setSpeaking(false);
   }, []);
 
@@ -87,28 +183,56 @@ export function useTts(locale: string) {
           voice: settings.voiceName || undefined,
         });
         const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        if (srcUrlRef.current) URL.revokeObjectURL(srcUrlRef.current);
+        srcUrlRef.current = url;
+        const audio = element(); // 같은 엘리먼트 재사용 — unlock 권한 유지
+        audio.src = url;
         audio.playbackRate = Math.min(2, Math.max(0.5, settings.speakingRate));
         audio.volume = Math.min(1, Math.pow(10, settings.volumeGainDb / 20));
-        audioRef.current = audio;
-        const cleanup = () => {
-          setSpeaking(false);
-          URL.revokeObjectURL(url);
-        };
-        audio.onended = cleanup;
-        audio.onerror = cleanup;
+        // 분석 그래프에 한 번만 연결한다. createMediaElementSource 는 엘리먼트당 평생 1회.
+        // 연결하면 엘리먼트 출력이 그래프로만 가므로 analyser→destination 을 반드시 이어야 소리가 난다.
+        if (ctxRef.current && analyserRef.current && !srcNodeRef.current) {
+          try {
+            const node = ctxRef.current.createMediaElementSource(audio);
+            node.connect(analyserRef.current);
+            analyserRef.current.connect(ctxRef.current.destination);
+            srcNodeRef.current = node;
+          } catch {
+            /* 이미 연결됨 등 — 무시 */
+          }
+        }
+        if (ctxRef.current?.state === "suspended") void ctxRef.current.resume();
+        audio.onended = () => setSpeaking(false);
+        audio.onerror = () => setSpeaking(false);
         await audio.play();
       } catch {
         setSpeaking(false);
       }
     },
-    [settings, stop],
+    [settings, stop, element],
   );
 
-  // 언마운트 시 재생 중단
-  useEffect(() => () => stop(), [stop]);
+  // 언마운트 시 재생 중단 + blob URL·AudioContext 정리
+  useEffect(
+    () => () => {
+      audioRef.current?.pause();
+      if (srcUrlRef.current) URL.revokeObjectURL(srcUrlRef.current);
+      void ctxRef.current?.close();
+    },
+    [],
+  );
 
-  return { voices, settings, setSettings, speak, stop, speaking, available: voices.length > 0 };
+  return {
+    voices,
+    settings,
+    setSettings,
+    speak,
+    stop,
+    unlock,
+    getLevel,
+    speaking,
+    available: voices.length > 0,
+  };
 }
 
 export type RecorderPhase = "idle" | "recording" | "paused";
