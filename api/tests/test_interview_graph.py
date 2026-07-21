@@ -112,7 +112,8 @@ def test_resume_probe_then_close_ends(fakes):
     set_llm(
         outs=[ListenOut(action="probe", question_id="q1", probe_type="심화"),
               ReflectOut(),                                   # 턴1 슬로우패스 원장 정리
-              ListenOut(action="close")],                     # 턴2 는 close → reflect 없음
+              ListenOut(action="close"),
+              ReflectOut()],                                  # 종료 턴에도 reflect 가 돈다 (BUG-1)
         texts=["오프닝?", "어느 정도일 때 부담되세요?", "말씀 감사했습니다. 여기서 마칠게요."],
     )
     g = build_graph(InMemorySaver())
@@ -132,7 +133,7 @@ def test_resume_probe_then_close_ends(fakes):
 
 def test_12turn_hard_guard_forces_close(fakes):
     fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="probe", question_id="q1")],
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
             texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -259,7 +260,7 @@ def test_honest_close_when_all_satisfied(fakes):
     led = init_ledger(GUIDE.model_dump())
     for q in led:
         led[q]["status"] = "satisfied"
-    set_llm(outs=[ListenOut(action="probe", question_id="q2")],
+    set_llm(outs=[ListenOut(action="probe", question_id="q2"), ReflectOut()],
             texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s2"}}
@@ -330,7 +331,7 @@ def test_farewell_skips_guard(fakes, monkeypatch):
     monkeypatch.setattr(guard_mod.guardrail, "ensure_neutral",
                         lambda q, **kw: (calls.append(q) or (q, False, "")))
     fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="close")], texts=["오프닝?", "마무리 인사"])
+    set_llm(outs=[ListenOut(action="close"), ReflectOut()], texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
@@ -374,6 +375,28 @@ def test_reflect_emotion_patches_turn(fakes, monkeypatch):
     _start(g, config)
     g.invoke(Command(resume={"text": "배달비 비싸요", "turn_id": "t_9"}), config)
     assert patched == {"t_9": {"emotion": "불만", "emotion_confidence": 0.7}}
+
+
+def test_close_turn_still_reflects_last_answer(fakes, monkeypatch):
+    # BUG-1 회귀: 종료 턴에도 슬로우패스가 돌아 마지막 문답이 원장·감정에 남아야 한다
+    from api.interview.nodes import reflect as ref_mod
+    fs, set_llm = fakes
+    patched = {}
+    fs.update_turn = lambda pid, sid, tid, patch: patched.update({tid: patch})
+    monkeypatch.setattr(ref_mod, "store", fs)
+    monkeypatch.setattr(ref_mod, "tag_emotion", lambda t: ("만족", 0.8))
+    set_llm(outs=[ListenOut(action="close"),
+                  ReflectOut(coverage="satisfied", facts=["총정리 사실"], hooks=[])],
+            texts=["오프닝?", "마무리 인사"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    r = g.invoke(Command(resume={"text": "정리하면 배달비가 제일 컸어요", "turn_id": "t_last"}), config)
+    assert r["done"] is True and "__interrupt__" not in r
+    v = g.get_state(config).values
+    assert v["ledger"]["q1"]["facts"] == ["총정리 사실"]           # 마지막 답변이 원장에 남았다
+    assert patched == {"t_last": {"emotion": "만족", "emotion_confidence": 0.8}}
+    assert g.get_state(config).next == ()                          # reflect 뒤 END — 재잠들지 않는다
 
 
 def test_listen_accepts_plain_string_resume(fakes):

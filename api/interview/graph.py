@@ -1,8 +1,11 @@
 """인터뷰 그래프 (T3) — interrupt 루프 + 노드 6개 + 행동 조건 엣지.
 
-START → generate(오프닝) → guard → speak ─done→ END
-                                       └계속→ listen【interrupt】→ strategize ─close→ farewell → speak
-                                                                        └6종→ generate → guard → speak
+START → generate(오프닝) → guard → speak ─문답 있음→ reflect(Send 병렬) ─done→ END
+                                       │                          └계속→ listen【interrupt】
+                                       └오프닝→ listen【interrupt】→ strategize ─close→ farewell → speak
+                                                                         └6종→ generate → guard → speak
+
+END 판단은 reflect 뒤 — 종료 턴에도 마지막 문답의 원장·감정 정리는 하고 끝낸다(BUG-1).
 """
 from __future__ import annotations
 
@@ -20,14 +23,16 @@ from .state import InterviewState
 
 
 def _after_speak(state: InterviewState):
-    if state.get("done"):
-        return END
     if state.get("utterance") and state.get("answered_qid"):
         sends = [Send("reflect_ledger", state)]      # 슬로우패스 — 사람의 시간에 숨는다
         if state.get("resp_turn_id"):
             sends.append(Send("reflect_emotion", state))
-        return sends
-    return "listen"                                   # 오프닝 턴 — 정리할 문답이 없다
+        return sends                                  # done 이어도 정리는 하고 끝낸다
+    return END if state.get("done") else "listen"     # 오프닝 턴 — 정리할 문답이 없다
+
+
+def _after_reflect(state: InterviewState):
+    return END if state.get("done") else "listen"
 
 
 def _route_action(state: InterviewState) -> str:
@@ -51,6 +56,6 @@ def build_graph(checkpointer):
     g.add_edge("guard", "speak")
     g.add_edge("farewell", "speak")
     g.add_conditional_edges("speak", _after_speak)
-    g.add_edge("reflect_ledger", "listen")
-    g.add_edge("reflect_emotion", "listen")
+    g.add_conditional_edges("reflect_ledger", _after_reflect)
+    g.add_conditional_edges("reflect_emotion", _after_reflect)
     return g.compile(checkpointer=checkpointer)
