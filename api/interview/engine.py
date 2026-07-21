@@ -13,7 +13,7 @@ from langgraph.types import Command
 
 from ..schemas.models import InterviewGuide, Session, Turn
 from ..services import store
-from ..services.moderator import tag_emotion
+from ..services.moderator import _question_part, is_non_answer, tag_emotion
 from ..services.pii import mask_pii, scan_pii
 from .checkpoint import get_checkpointer
 from .graph import build_graph
@@ -47,17 +47,37 @@ def initial_state(project_id: str, sid: str, lang: str, guide: InterviewGuide, s
     }
 
 
+def _non_answer_reply(project_id: str, sid: str, text: str) -> Turn | None:
+    """추임새뿐인 발화면 되물을 진행자 턴을 만든다 — 저장 안 함·그래프 안 깨움(레거시 계약)."""
+    if not text or not is_non_answer(text):
+        return None
+    prev = next(
+        (t for t in reversed(store.list_turns(project_id, sid)) if t.role == "moderator"), None
+    )
+    if not (prev and prev.text):
+        return None
+    message = f"앗, 잘 못 들었어요. 다시 여쭤볼게요. {_question_part(prev.text)}"
+    return Turn(role="moderator", text=message, question_id=prev.question_id)
+
+
 def next_turn(
     project_id: str, session: Session, guide: InterviewGuide, respondent_text: str, lang: str = "ko"
 ) -> tuple[str, bool, Turn | None, Turn]:
     """moderator.next_turn 과 동일 반환: (발화, 종료, 응답자턴|None, 진행자턴)."""
+    text = (respondent_text or "").strip()
+
+    # 무의미 발화 단락 — 그래프 기동(get_graph) 전에 처리해야 잠든 실행을 건드리지 않는다
+    retry = _non_answer_reply(project_id, session.id, text)
+    if retry is not None:
+        log.info("무의미 발화 — 그래프를 깨우지 않고 되묻는다 (session=%s)", session.id)
+        return retry.text, False, None, retry
+
     g = get_graph()
     sid = session.id
     config = {"configurable": {"thread_id": sid}}
 
     respondent_turn: Turn | None = None
     masked = ""
-    text = (respondent_text or "").strip()
     if text:
         pii_types = scan_pii(text)
         masked = mask_pii(text)

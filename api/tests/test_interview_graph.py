@@ -332,3 +332,28 @@ def test_farewell_skips_guard(fakes, monkeypatch):
     _start(g, config)
     g.invoke(Command(resume="네"), config)
     assert calls == ["오프닝?"]                               # 오프닝만 검수, 인사는 미경유
+
+
+# --- T3: 비답변 단락 (엔진) ------------------------------------------------------
+
+def test_non_answer_short_circuits_without_waking_graph(monkeypatch):
+    from api.interview import engine as eng
+    fs = FakeStore()
+    fs.turns = [Turn(role="moderator", text="안녕하세요! 어떤 앱을 쓰세요?", question_id="q1")]
+    monkeypatch.setattr(eng, "store", fs)
+    monkeypatch.setattr(eng, "get_graph", lambda: (_ for _ in ()).throw(AssertionError("그래프를 깨우면 안 된다")))
+
+    from api.schemas.models import Session
+    msg, done, resp, mod = eng.next_turn("p1", Session(id="s1", project_id="p1"), GUIDE, "음, 그래. 그래.")
+    assert "다시 여쭤볼게요" in msg and "어떤 앱을 쓰세요?" in msg
+    assert done is False and resp is None
+    assert len(fs.turns) == 1                                 # 아무것도 저장 안 됨
+
+
+def test_real_answer_does_not_short_circuit(monkeypatch):
+    # '글쎄요'는 실제 답변(모르겠다는 의사) — 레거시 _FILLERS 설계 의도대로 단락되면 안 된다
+    from api.interview import engine as eng
+    fs = FakeStore()
+    fs.turns = [Turn(role="moderator", text="질문?", question_id="q1")]
+    monkeypatch.setattr(eng, "store", fs)
+    assert eng._non_answer_reply("p1", "s1", "글쎄요, 잘 모르겠어요") is None
