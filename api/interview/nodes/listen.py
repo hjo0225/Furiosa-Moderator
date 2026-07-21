@@ -1,7 +1,7 @@
-"""listen — 발화 대기(interrupt) + 만능 1콜 + 원장 갱신 (T2).
+"""listen — 발화 대기(interrupt) + 분석 콜 (T3 콜 분리).
 
-T2: store 를 더 이상 읽지 않는다 — 대화·커버리지·페이스 전부 State 소유(필수③).
-원장 갱신은 v1 규칙대로 노드 내에서(슬로우패스 이사는 T4).
+분석 콜은 질문 문장을 만들지 않는다 — 취재 수첩 정리와 행동 7종 선택만.
+질문 생성은 generate, 마무리 인사는 farewell 의 일.
 interrupt() 는 여전히 노드 첫 문장 — 재실행 멱등 규약.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from langgraph.types import interrupt
 
 from ...services.llm_client import get_llm
 from ..ledger import update_ledger
-from ..prompts import ListenOut, interview_moderator_system, listen_user
+from ..prompts import ANALYST_SYSTEM, ListenOut, analysis_user
 from ..state import InterviewState
 
 
@@ -21,11 +21,10 @@ def listen(state: InterviewState) -> dict:
 
     prev_qid = state.get("question_id", "")           # 응답자가 방금 답한 문항
     out, _ = get_llm().structured(
-        interview_moderator_system(state.get("lang", "ko")),
-        listen_user(
+        ANALYST_SYSTEM,
+        analysis_user(
             state["guide"], state.get("messages", []), utterance,
-            state.get("asked", 0), state.get("probe_streak", 0),
-            state.get("ledger", {}), state.get("lang", "ko"),
+            state.get("asked", 0), state.get("probe_streak", 0), state.get("ledger", {}),
         ),
         ListenOut,
         max_tokens=700,
@@ -34,9 +33,11 @@ def listen(state: InterviewState) -> dict:
         "messages": [HumanMessage(content=utterance)],
         "utterance": utterance,
         "ledger": update_ledger(state.get("ledger", {}), prev_qid, out.coverage, out.facts, out.hooks),
-        "draft": (out.message or "").strip(),
-        "action": "close" if out.done else ("probe" if out.is_probe else "advance"),
+        "analysis": {"contradiction": out.contradiction, "reason": out.reason, "coverage": out.coverage},
+        "action": out.action,
         "question_id": out.question_id or prev_qid,
-        "is_probe": bool(out.is_probe),
-        **({"end_reason": "model_done"} if out.done else {}),
+        "probe_type": out.probe_type,
+        "is_probe": out.action == "probe",
+        "draft": "",
+        **({"end_reason": "model_done"} if out.action == "close" else {}),
     }

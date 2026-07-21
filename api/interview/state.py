@@ -47,6 +47,8 @@ class InterviewState(TypedDict, total=False):
     action: str                # probe | advance | close
     question_id: str
     is_probe: bool
+    probe_type: str            # probe 일 때 래더링 단계: 구체화 | 심화 (로그 관찰용)
+    analysis: dict             # listen 분석 결과 — contradiction·reason 등 (타임트래블 디버깅용)
     message: str
     rewritten: bool
     done: bool

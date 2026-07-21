@@ -1,7 +1,8 @@
-"""인터뷰 그래프 골격(T1) 단위테스트 — 네트워크·DB 없이 InMemorySaver 로.
+"""인터뷰 그래프 단위테스트 — 네트워크·DB 없이 InMemorySaver 로.
 
-검증 대상: interrupt 루프(잠들기→재개), 노드 5개 배선, 12턴 결정론 가드,
-guard 적용 조건, speak 의 저장·세션 갱신. LLM 과 store 는 가짜로 대체한다.
+검증 대상: interrupt 루프, 노드 배선(T3: 행동 조건 엣지 + farewell), 결정론
+(12턴·정직종료·revisit 검증), guard 적용 조건, speak 의 저장·세션 갱신.
+LLM(분석 structured / 생성 text)과 store 는 가짜로 대체한다.
 """
 from __future__ import annotations
 
@@ -39,18 +40,25 @@ class FakeStore:
 
 
 class FakeLLM:
-    """structured() 호출마다 큐에서 하나씩 꺼내 준다."""
-    def __init__(self, outs):
+    """structured()/text() 호출마다 각자 큐에서 하나씩 꺼내 준다. 프롬프트를 캡처한다."""
+    def __init__(self, outs=(), texts=()):
         self.outs = list(outs)
-        self.calls = 0
+        self.texts = list(texts)
+        self.structured_prompts: list[str] = []
+        self.text_prompts: list[str] = []
 
     def structured(self, system, user, schema, **kw):
-        self.calls += 1
+        self.structured_prompts.append(user)
         return self.outs.pop(0), None
+
+    def text(self, system, user, **kw):
+        self.text_prompts.append(user)
+        return self.texts.pop(0), None
 
 
 @pytest.fixture
 def fakes(monkeypatch):
+    from api.interview.nodes import farewell as fw_mod
     from api.interview.nodes import generate as gen_mod
     from api.interview.nodes import guard as guard_mod
     from api.interview.nodes import listen as listen_mod
@@ -65,10 +73,10 @@ def fakes(monkeypatch):
         lambda q, **kw: (q, False, "") if "당연히" not in q else ("중립 질문으로 재작성", True, "당연시"),
     )
 
-    def set_llm(outs):
-        llm = FakeLLM(outs)
-        monkeypatch.setattr(listen_mod, "get_llm", lambda: llm)
-        monkeypatch.setattr(gen_mod, "get_llm", lambda: llm)
+    def set_llm(outs=(), texts=()):
+        llm = FakeLLM(outs, texts)
+        for m in (listen_mod, gen_mod, fw_mod):
+            monkeypatch.setattr(m, "get_llm", lambda llm=llm: llm)
         return llm
 
     return fs, set_llm
@@ -83,69 +91,66 @@ def _start(g, config):
     )
 
 
+# --- 골격: interrupt 루프 -------------------------------------------------------
+
 def test_opening_then_sleeps_at_interrupt(fakes):
     fs, set_llm = fakes
-    set_llm([ListenOut(message="안녕하세요! 어떤 배달앱을 쓰세요?", question_id="q1")])
+    set_llm(texts=["안녕하세요! 어떤 배달앱을 쓰세요?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     result = _start(g, config)
-
     assert result["message"] == "안녕하세요! 어떤 배달앱을 쓰세요?"
-    assert result["asked"] == 1 and result["covered"] == ["q1"]
-    assert fs.turns[-1].role == "moderator"          # speak 가 저장했다
-    assert "__interrupt__" in result                  # listen 에서 잠들었다
+    assert result["asked"] == 1 and result["covered"] == ["q1"]   # 오프닝 qid 는 코드가 확정
+    assert fs.turns[-1].role == "moderator"
+    assert "__interrupt__" in result
     assert g.get_state(config).next == ("listen",)
 
 
 def test_resume_probe_then_close_ends(fakes):
     fs, set_llm = fakes
-    set_llm([
-        ListenOut(message="오프닝 질문입니다?", question_id="q1"),
-        ListenOut(message="어느 정도일 때 부담되세요?", question_id="q1", is_probe=True),
-        ListenOut(message="감사합니다. 마치겠습니다.", done=True),
-    ])
+    set_llm(
+        outs=[ListenOut(action="probe", question_id="q1", probe_type="심화"),
+              ListenOut(action="close")],
+        texts=["오프닝?", "어느 정도일 때 부담되세요?", "말씀 감사했습니다. 여기서 마칠게요."],
+    )
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
 
     r2 = g.invoke(Command(resume="배달비가 부담돼요"), config)
-    assert r2["is_probe"] is True and not r2.get("done")  # done 계약: 키 없음 = False
-    assert r2["asked"] == 2
-    assert "__interrupt__" in r2
+    assert r2["is_probe"] is True and not r2.get("done")
+    assert r2["asked"] == 2 and "__interrupt__" in r2
 
     r3 = g.invoke(Command(resume="그 정도예요"), config)
-    assert r3["done"] is True
-    assert "__interrupt__" not in r3                  # END 도달
-    assert g.get_state(config).next == ()             # 더 깰 것이 없다
+    assert r3["done"] is True and r3["message"] == "말씀 감사했습니다. 여기서 마칠게요."
+    assert r3["end_reason"] == "model_done"
+    assert "__interrupt__" not in r3 and g.get_state(config).next == ()
     assert fs.session_patches[-1]["status"] == "pending"  # 제출(R-4) 전까지는 completed 아님
 
 
 def test_12turn_hard_guard_forces_close(fakes):
     fs, set_llm = fakes
-    set_llm([
-        ListenOut(message="오프닝?", question_id="q1"),
-        ListenOut(message="더 파고들 질문?", question_id="q2", is_probe=True),  # LLM 은 계속하려 한다
-    ])
+    set_llm(outs=[ListenOut(action="probe", question_id="q1")],
+            texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
-    # T2: asked 는 State 소유 — 이미 11회 물은 세션으로 시작 (이어하기 시나리오)
+    # asked 는 State 소유 — 이미 11회 물은 세션으로 시작 (이어하기 시나리오)
     g.invoke({"project_id": "p1", "session_id": "s1", "lang": "ko",
               "guide": GUIDE.model_dump(), "covered": [], "asked": 11,
               "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
              config)
     r = g.invoke(Command(resume="네"), config)
-    assert r["done"] is True                          # 결정론 엣지가 이겼다
-    assert r["end_reason"] == "max_turns"
+    assert r["done"] is True and r["end_reason"] == "max_turns"
+    assert r["message"] == "마무리 인사"                      # quirk 해소: 질문이 아니라 인사
 
 
 def test_guard_rewrites_leading_question(fakes):
     fs, set_llm = fakes
-    set_llm([ListenOut(message="당연히 편하셨죠?", question_id="q1")])
+    set_llm(texts=["당연히 편하셨죠?"])
     g = build_graph(InMemorySaver())
     r = _start(g, {"configurable": {"thread_id": "s1"}})
     assert r["message"] == "중립 질문으로 재작성"
-    assert r["rewritten"] is True
-    assert fs.turns[-1].guardrail_rewritten is True
+    assert r["rewritten"] is True and fs.turns[-1].guardrail_rewritten is True
 
 
 # --- checkpoint conn_string ----------------------------------------------------
@@ -220,27 +225,22 @@ def test_turn_uses_graph_engine_when_flag_set(monkeypatch):
 
 def test_messages_accumulate_in_state(fakes):
     fs, set_llm = fakes
-    set_llm([
-        ListenOut(message="오프닝?", question_id="q1"),
-        ListenOut(message="꼬리?", question_id="q1", is_probe=True),
-    ])
+    set_llm(outs=[ListenOut(action="probe", question_id="q1")],
+            texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
     g.invoke(Command(resume="배민 써요"), config)
     msgs = g.get_state(config).values["messages"]
-    # AI(오프닝) → Human(답변) → AI(꼬리질문)
     assert [m.type for m in msgs] == ["ai", "human", "ai"]
     assert msgs[1].content == "배민 써요"
 
 
 def test_listen_updates_ledger_and_probe_streak(fakes):
     fs, set_llm = fakes
-    set_llm([
-        ListenOut(message="오프닝?", question_id="q1"),
-        ListenOut(message="꼬리?", question_id="q1", is_probe=True,
-                  coverage="touched", facts=["배민 사용"], hooks=["배민클럽"]),
-    ])
+    set_llm(outs=[ListenOut(action="probe", question_id="q1",
+                            coverage="touched", facts=["배민 사용"], hooks=["배민클럽"])],
+            texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
@@ -248,25 +248,87 @@ def test_listen_updates_ledger_and_probe_streak(fakes):
     v = g.get_state(config).values
     assert v["ledger"]["q1"]["facts"] == ["배민 사용"]
     assert v["ledger"]["q1"]["hooks"] == ["배민클럽"]
-    assert v["ledger"]["q1"]["status"] == "touched"
-    assert v["probe_streak"] == 1                     # 꼬리질문 1연속
+    assert v["probe_streak"] == 1
+    assert v["analysis"]["reason"] == ""                     # 분석 스냅숏 저장 확인
 
 
 def test_honest_close_when_all_satisfied(fakes):
     fs, set_llm = fakes
-    # 원장을 전부 satisfied 로 채운 채 시작 — LLM 이 계속하자고 해도 결정론 close
     led = init_ledger(GUIDE.model_dump())
     for q in led:
         led[q]["status"] = "satisfied"
-    set_llm([
-        ListenOut(message="오프닝?", question_id="q1"),
-        ListenOut(message="계속 묻고 싶은데요?", question_id="q2", coverage="satisfied"),
-    ])
+    set_llm(outs=[ListenOut(action="probe", question_id="q2", coverage="satisfied")],
+            texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s2"}}
     g.invoke({"project_id": "p1", "session_id": "s2", "lang": "ko",
               "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
               "messages": [], "ledger": led, "probe_streak": 0}, config)
     r = g.invoke(Command(resume="네 뭐든요"), config)
-    assert r["done"] is True                           # 정직한 종료가 이겼다
-    assert r["end_reason"] == "honest_close"           # 종료 근거가 기록된다
+    assert r["done"] is True and r["end_reason"] == "honest_close"
+
+
+# --- T3: 행동 7종 ---------------------------------------------------------------
+
+def test_new_actions_reach_generate_with_directives(fakes):
+    fs, set_llm = fakes
+    llm = set_llm(
+        outs=[ListenOut(action="challenge", contradiction="가격 안 본다더니 최저가만 찾음"),
+              ListenOut(action="redirect")],
+        texts=["오프닝?", "챌린지 질문?", "복귀 질문?"],
+    )
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    r = g.invoke(Command(resume="무조건 최저가요"), config)
+    assert r["message"] == "챌린지 질문?"
+    assert "가격 안 본다더니" in llm.text_prompts[-1]        # 모순이 생성 프롬프트에 실림
+    r = g.invoke(Command(resume="근데 어제 축구 봤는데요"), config)
+    assert "부드럽게 원래 주제로" in llm.text_prompts[-1]     # redirect 지시
+
+
+def test_revisit_demoted_without_thin_question(fakes):
+    fs, set_llm = fakes
+    # q1 은 이미 satisfied(후퇴 금지로 오프닝 touched 마킹에도 유지), q2 는 pending
+    # → 원장에 touched(빈약) 문항이 하나도 없다 = revisit 근거 없음
+    led = init_ledger(GUIDE.model_dump())
+    led["q1"]["status"] = "satisfied"
+    set_llm(outs=[ListenOut(action="revisit", question_id="q2")],
+            texts=["오프닝?", "질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    g.invoke({"project_id": "p1", "session_id": "s1", "lang": "ko",
+              "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
+              "messages": [], "ledger": led, "probe_streak": 0}, config)
+    g.invoke(Command(resume="네"), config)
+    assert g.get_state(config).values["action"] == "advance"  # 근거 없음 → 강등
+
+
+def test_revisit_target_corrected_to_thin(fakes):
+    fs, set_llm = fakes
+    led = init_ledger(GUIDE.model_dump())
+    led["q1"]["status"] = "touched"                           # 빈약 문항은 q1 뿐
+    set_llm(outs=[ListenOut(action="revisit", question_id="q2")],   # 잘못된 대상
+            texts=["오프닝?", "재방문 질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    g.invoke({"project_id": "p1", "session_id": "s1", "lang": "ko",
+              "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
+              "messages": [], "ledger": led, "probe_streak": 0}, config)
+    g.invoke(Command(resume="네"), config)
+    v = g.get_state(config).values
+    assert v["action"] == "revisit" and v["question_id"] == "q1"   # 대상 보정
+
+
+def test_farewell_skips_guard(fakes, monkeypatch):
+    from api.interview.nodes import guard as guard_mod
+    calls = []
+    monkeypatch.setattr(guard_mod.guardrail, "ensure_neutral",
+                        lambda q, **kw: (calls.append(q) or (q, False, "")))
+    fs, set_llm = fakes
+    set_llm(outs=[ListenOut(action="close")], texts=["오프닝?", "마무리 인사"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="네"), config)
+    assert calls == ["오프닝?"]                               # 오프닝만 검수, 인사는 미경유

@@ -1,4 +1,7 @@
-"""strategize — 결정론 정책: 12턴 하드 가드 + 정직한 종료 (T2). 행동 7종은 T3."""
+"""strategize — 결정론 확정: 12턴 하드 가드 + 정직한 종료 + revisit 근거 검증 (T3).
+
+LLM(분석 콜)의 행동 '제안'을 데이터가 검열한다 — 판단은 LLM, 집행은 결정론.
+"""
 from __future__ import annotations
 
 from ..state import InterviewState
@@ -14,4 +17,11 @@ def strategize(state: InterviewState) -> dict:
     ledger = state.get("ledger", {})
     if ledger and all(e["status"] in ("satisfied", "saturated") for e in ledger.values()):
         return {"action": "close", "end_reason": "honest_close"}
+    # revisit 근거 검증 — 원장에 빈약(touched) 문항이 없으면 강등, 대상이 틀리면 보정
+    if state.get("action") == "revisit":
+        thin = [qid for qid, e in ledger.items() if e["status"] == "touched"]
+        if not thin:
+            return {"action": "advance"}
+        if state.get("question_id") not in thin:
+            return {"question_id": thin[0]}
     return {}
