@@ -47,6 +47,21 @@ class Usage:
     tokens_out: int
 
 
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict | None   # JSON 파싱 실패 시 None — raw_arguments 로 관찰
+    raw_arguments: str
+
+
+@dataclass
+class ChatOut:
+    content: str
+    tool_calls: list[ToolCall]
+    finish_reason: str
+
+
 class LLMError(RuntimeError):
     """LLM 호출 실패 — 라우터가 502 로 변환한다."""
 
@@ -140,6 +155,53 @@ class LLMClient:
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield delta.content
+
+    # --- 범용 chat (tool-loop 재료) --------------------------------------------
+
+    def chat(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        max_tokens: int = 512,
+        temperature: float | None = None,
+        model: str | None = None,
+    ) -> tuple[ChatOut, Usage]:
+        """messages 를 그대로 넘기는 범용 호출 — LangGraph tool-loop 용.
+
+        tools 가 있으면 tool_choice 기본 "auto"(자율 선택 — TICKET-0 실측 대상),
+        온도는 구조화 값(0.3). 기존 text()/structured() 는 불변.
+        """
+        m = model or self.model
+        if temperature is None:
+            temperature = _TEMP_STRUCTURED if tools else _TEMP_TEXT
+        kwargs: dict = dict(
+            model=m, max_tokens=max_tokens, temperature=temperature,
+            messages=messages, **self._extra(),
+        )
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice or "auto"
+        resp = self._call(**kwargs)
+        choice = resp.choices[0]
+        calls: list[ToolCall] = []
+        for c in choice.message.tool_calls or []:
+            raw = c.function.arguments or ""
+            try:
+                parsed = json.loads(raw) if raw else {}
+            except ValueError:
+                parsed = None
+            calls.append(ToolCall(id=c.id, name=c.function.name, arguments=parsed, raw_arguments=raw))
+        u = resp.usage
+        return (
+            ChatOut(
+                content=(choice.message.content or "").strip(),
+                tool_calls=calls,
+                finish_reason=choice.finish_reason or "",
+            ),
+            Usage(m, u.prompt_tokens if u else 0, u.completion_tokens if u else 0),
+        )
 
     # --- 구조화 출력 ----------------------------------------------------------
 
