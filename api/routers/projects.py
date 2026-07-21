@@ -23,6 +23,7 @@ from ..schemas.models import (
     InterviewGuide,
     Project,
     ProjectCreateIn,
+    WebhookSetIn,
 )
 from ..services import store
 from ..services.llm_client import LLMError, get_llm
@@ -45,8 +46,16 @@ def create_project(body: ProjectCreateIn) -> Project:
         raise HTTPException(400, "주제를 입력하세요.")
     return store.create_project(
         Project(topic=body.topic.strip(), title=body.title.strip() or body.topic.strip()[:40],
-                target=body.target.strip())
+                target=body.target.strip(), discord_webhook_url=body.discord_webhook_url.strip())
     )
+
+
+@router.put("/{pid}/webhook", response_model=Project)
+def set_webhook(pid: str, body: WebhookSetIn) -> Project:
+    """프로젝트별 Discord 웹훅 override 설정. 빈 문자열이면 기본 채널로 폴백."""
+    _require(pid)
+    store.update_project(pid, {"discord_webhook_url": body.discord_webhook_url.strip()})
+    return _require(pid)
 
 
 @router.get("", response_model=list[Project])

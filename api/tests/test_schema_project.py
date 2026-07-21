@@ -38,3 +38,33 @@ def test_store_project_maps_discord_webhook_url():
     )
     p = store._project(row, 0, 0)
     assert p.discord_webhook_url == "https://x"
+
+
+def test_webhook_route_registered():
+    import api.main as m
+    paths = {r.path for r in m.app.routes if hasattr(r, "path")}
+    assert "/api/projects/{pid}/webhook" in paths
+
+
+def test_set_webhook_updates_via_store(monkeypatch):
+    from api.routers import projects
+    from api.schemas.models import Project, WebhookSetIn
+
+    updates = {}
+    monkeypatch.setattr(projects.store, "get_project", lambda pid: Project(id="p_1", topic="t"))
+    monkeypatch.setattr(projects.store, "update_project", lambda pid, patch: updates.update(patch))
+
+    projects.set_webhook("p_1", WebhookSetIn(discord_webhook_url="https://x"))
+    assert updates == {"discord_webhook_url": "https://x"}
+
+
+def test_create_project_passes_webhook(monkeypatch):
+    from api.routers import projects
+    from api.schemas.models import ProjectCreateIn
+
+    captured = {}
+    monkeypatch.setattr(projects.store, "create_project",
+                        lambda p: captured.update(url=p.discord_webhook_url) or p)
+
+    projects.create_project(ProjectCreateIn(topic="주제", discord_webhook_url="https://x"))
+    assert captured["url"] == "https://x"
