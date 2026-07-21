@@ -3,7 +3,7 @@
 // C-2 인터뷰 가이드 검토·수정 + C-3 배포(응답자 링크 발급).
 import { useCallback, useEffect, useState } from "react";
 
-import { Button } from "@/components/shared";
+import { Button, buttonVariants } from "@/components/shared";
 import {
   ApiError,
   deployProject,
@@ -315,7 +315,7 @@ export function GuidePanel({
               href={link}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center rounded-full px-4 text-meta font-medium text-accent underline"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               새 탭에서 열기
             </a>

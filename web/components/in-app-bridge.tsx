@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/shared";
 import { isInAppBrowser } from "@/lib/in-app-browser";
 
 export function InAppBridge() {
@@ -53,12 +54,9 @@ export function InAppBridge() {
           <br />
           Copy the link and open it in <b className="text-ink">Chrome / Safari</b>.
         </p>
-        <button
-          onClick={copyLink}
-          className="mt-5 w-full rounded-full bg-accent-solid px-6 py-3 text-base font-semibold text-accent-on shadow-card transition-all hover:brightness-105 active:scale-[0.98]"
-        >
+        <Button type="button" onClick={copyLink} className="mt-5 w-full">
           {copied ? "✓ 복사됨 / Copied" : "링크 복사하기 / Copy link"}
-        </button>
+        </Button>
       </div>
     </div>
   );
