@@ -6,8 +6,6 @@ SSE 스트리밍 연결은 T4.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from langchain_core.messages import AIMessage
 
 from ...schemas.models import Turn
@@ -33,8 +31,9 @@ def speak(state: InterviewState) -> dict:
     asked = state.get("asked", 0) + 1
     patch: dict = {"asked": asked, "covered": covered, "status": "active"}
     if state.get("done"):
-        patch["status"] = "completed"
-        patch["ended_at"] = datetime.now(timezone.utc)
+        # 진행자 done ≠ 응답 1건 — 응답자가 제출(public.submit)해야 completed 가 되고
+        # ended_at 도 그때 찍힌다 (원격 R-4 시맨틱과 정렬).
+        patch["status"] = "pending"
     store.update_session(pid, sid, patch)
     return {
         "messages": [AIMessage(content=message)],

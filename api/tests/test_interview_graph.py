@@ -117,7 +117,7 @@ def test_resume_probe_then_close_ends(fakes):
     assert r3["done"] is True
     assert "__interrupt__" not in r3                  # END 도달
     assert g.get_state(config).next == ()             # 더 깰 것이 없다
-    assert fs.session_patches[-1]["status"] == "completed"
+    assert fs.session_patches[-1]["status"] == "pending"  # 제출(R-4) 전까지는 completed 아님
 
 
 def test_12turn_hard_guard_forces_close(fakes):
