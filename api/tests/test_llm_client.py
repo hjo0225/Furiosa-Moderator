@@ -71,3 +71,42 @@ def test_chat_keeps_raw_on_broken_tool_args():
     out, _ = cli.chat([{"role": "user", "content": "hi"}], tools=[{"type": "function", "function": {"name": "pace"}}])
     assert out.tool_calls[0].arguments is None           # 파싱 실패는 None
     assert out.tool_calls[0].raw_arguments == "{broken"  # 원문 보존 — 실측이 관찰
+
+
+# --- embed() ------------------------------------------------------------------
+
+class _FakeEmbeddings:
+    def __init__(self, resp):
+        self.resp = resp
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        return self.resp
+
+
+def test_embed_preserves_order_and_forwards_params():
+    cli = LLMClient(api_key="k", model="m")
+    resp = SimpleNamespace(
+        data=[SimpleNamespace(index=1, embedding=[0.2]), SimpleNamespace(index=0, embedding=[0.1])],
+        usage=SimpleNamespace(prompt_tokens=7),
+    )
+    fake = _FakeEmbeddings(resp)
+    cli._embed_cli = SimpleNamespace(embeddings=fake)
+    vecs, usage = cli.embed(["a", "b"], dimensions=1024)
+    assert vecs == [[0.1], [0.2]]                        # index 로 재정렬
+    assert fake.kwargs["input"] == ["a", "b"]
+    assert fake.kwargs["model"] == cli.embed_model
+    assert fake.kwargs["dimensions"] == 1024
+    assert usage.tokens_in == 7 and usage.tokens_out == 0
+
+
+def test_embed_omits_dimensions_when_none():
+    cli = LLMClient(api_key="k", model="m")
+    resp = SimpleNamespace(data=[SimpleNamespace(index=0, embedding=[0.5])], usage=None)
+    fake = _FakeEmbeddings(resp)
+    cli._embed_cli = SimpleNamespace(embeddings=fake)
+    vecs, usage = cli.embed(["x"])
+    assert vecs == [[0.5]]
+    assert "dimensions" not in fake.kwargs               # 미지정 시 서버 기본 차원
+    assert usage.tokens_in == 0

@@ -76,6 +76,9 @@ class LLMClient:
         self.max_retries = s.llm_max_retries
         self._disable_thinking = s.llm_disable_thinking
         self._cli = None
+        self.embed_model = s.embed_model
+        self.embed_api_key = (s.embed_api_key or "").lstrip("﻿").strip()
+        self._embed_cli = None
 
     def _client(self):
         if self._cli is None:
@@ -111,6 +114,52 @@ class LLMClient:
                     raise LLMError(f"LLM {status}: {e}") from e
                 time.sleep(_BACKOFF**attempt)
         raise LLMError(f"LLM 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
+
+    def _embed_client(self):
+        if self._embed_cli is None:
+            from openai import OpenAI
+
+            self._embed_cli = OpenAI(
+                api_key=self.embed_api_key or "unused",
+                base_url=self.base_url,   # 같은 Furiosa 엔드포인트, 키만 다르다
+                timeout=self.timeout,
+                max_retries=0,
+            )
+        return self._embed_cli
+
+    # --- 임베딩 ---------------------------------------------------------------
+
+    def embed(
+        self, texts: list[str], *, dimensions: int | None = None, model: str | None = None
+    ) -> tuple[list[list[float]], Usage]:
+        """임베딩 — /v1/embeddings, EMBED_API_KEY 사용. 반환은 입력 순서 보존.
+
+        dimensions 는 MRL 절단(§11 제안 1024). 서버 미지원이면 4xx → LLMError
+        로 즉시 드러난다 — TICKET-5 에서 클라이언트 절단 폴백을 결정한다.
+        재시도 루프는 _call 과 같은 정책의 의도된 중복(기존 메서드 불변 원칙).
+        """
+        from openai import APIConnectionError, APIStatusError, APITimeoutError
+
+        m = model or self.embed_model
+        kwargs: dict = dict(model=m, input=texts)
+        if dimensions is not None:
+            kwargs["dimensions"] = dimensions
+        last: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                resp = self._embed_client().embeddings.create(**kwargs)
+                break
+            except (APIStatusError, APIConnectionError, APITimeoutError) as e:
+                last = e
+                status = getattr(e, "status_code", None)
+                if status and status < 500 and status != 429:
+                    raise LLMError(f"임베딩 {status}: {e}") from e
+                time.sleep(_BACKOFF**attempt)
+        else:
+            raise LLMError(f"임베딩 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
+        data = sorted(resp.data, key=lambda d: d.index)
+        u = resp.usage
+        return [d.embedding for d in data], Usage(m, getattr(u, "prompt_tokens", 0) if u else 0, 0)
 
     # --- 텍스트 --------------------------------------------------------------
 
