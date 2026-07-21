@@ -141,3 +141,22 @@ def test_guard_rewrites_leading_question(fakes):
     assert r["message"] == "중립 질문으로 재작성"
     assert r["rewritten"] is True
     assert fs.turns[-1].guardrail_rewritten is True
+
+
+# --- checkpoint conn_string ----------------------------------------------------
+
+def test_conn_string_normalizes_pg8000_url(monkeypatch):
+    from api.interview import checkpoint
+    monkeypatch.delenv("INSTANCE_CONNECTION_NAME", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+pg8000://u:p@localhost:5432/mindlens")
+    assert checkpoint.conn_string() == "postgresql://u:p@localhost:5432/mindlens"
+
+
+def test_conn_string_uses_cloudsql_socket(monkeypatch):
+    from api.interview import checkpoint
+    monkeypatch.setenv("INSTANCE_CONNECTION_NAME", "proj:asia-northeast3:db")
+    monkeypatch.setenv("DB_USER", "postgres")
+    monkeypatch.setenv("DB_PASSWORD", "pw")
+    monkeypatch.setenv("DB_NAME", "mindlens")
+    s = checkpoint.conn_string()
+    assert "host=/cloudsql/proj:asia-northeast3:db" in s and "dbname=mindlens" in s
