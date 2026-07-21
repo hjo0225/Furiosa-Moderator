@@ -13,10 +13,19 @@ export type Project = {
   title: string;
   topic: string;
   target: string;
+  material_text: string; // 업로드한 참고 자료 (가이드 생성에 주입). 비어 있으면 미첨부.
   status: ProjectStatus;
   created_at: string;
   session_count: number;
   completed_count: number;
+};
+
+/** 자료 업로드 응답 (POST /api/projects/{id}/material). */
+export type MaterialUploadResult = {
+  project_id: string;
+  chars: number;
+  truncated: boolean;
+  summarized?: boolean; // 긴 자료를 LLM이 요약해 저장한 경우 true (백엔드 ② 이후)
 };
 
 export type GuideQuestion = { id: string; text: string; goal: string; order: number };
@@ -133,6 +142,16 @@ export const getProject = (pid: string) => request<Project>(`/api/projects/${pid
 /** 가이드 자동 생성 (C-2). 인자를 비우면 프로젝트의 주제·대상을 그대로 쓴다. */
 export const generateGuide = (pid: string, body?: { topic?: string; target?: string }) =>
   post<InterviewGuide>(`/api/projects/${pid}/guide`, body ?? {});
+
+/** 참고 자료 업로드 (선택). 업로드하면 가이드 생성 시 도메인 맥락이 프롬프트에 주입된다.
+ *  multipart 라 JSON 헬퍼가 아니라 transcribeAudio 처럼 FormData 로 보낸다. */
+export async function uploadMaterial(pid: string, file: File): Promise<MaterialUploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/api/projects/${pid}/material`, { method: "POST", body: form });
+  if (!res.ok) throw new ApiError(res.status, `upload material → ${res.status}`);
+  return (await res.json()) as MaterialUploadResult;
+}
 
 export const getGuide = (pid: string) => request<InterviewGuide>(`/api/projects/${pid}/guide`);
 
