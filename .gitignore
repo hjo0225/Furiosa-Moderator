@@ -20,3 +20,6 @@ next-env.d.ts
 .uvicorn.err
 .uvicorn.out
 *.log
+
+# 에이전트 작업 가이드 — 각자 선호가 달라 공유하지 않는다 (로컬 파일은 유지)
+CLAUDE.md
