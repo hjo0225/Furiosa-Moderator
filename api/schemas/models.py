@@ -45,6 +45,7 @@ class Project(BaseModel):
     title: str = ""
     topic: str
     target: str = ""             # 대상 조건
+    material_text: str = ""      # 의뢰자 업로드 자료 (가이드 생성 프롬프트 주입용)
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0

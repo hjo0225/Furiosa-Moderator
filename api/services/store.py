@@ -34,6 +34,7 @@ def new_id(prefix: str = "") -> str:
 def _project(r: ProjectRow, sessions: int = 0, completed: int = 0) -> Project:
     return Project(
         id=r.id, owner=r.owner, title=r.title, topic=r.topic, target=r.target,
+        material_text=r.material_text,
         status=r.status, created_at=r.created_at,
         session_count=sessions, completed_count=completed,
     )
