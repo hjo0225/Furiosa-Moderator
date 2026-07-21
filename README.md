@@ -30,21 +30,26 @@ GCP 프로젝트 `mindlens-furiosa-2026` (asia-northeast3) · Cloud Run ×2 + Cl
 
 ```
 api/                    FastAPI
+  main.py               앱 엔트리 · CORS · IP 레이트리밋 · /health
+  config.py             환경변수 단일 소스 (Settings)
   services/
     llm_client.py       OpenAI 호환 클라이언트 (재시도·구조화출력·자가교정)
     moderator.py        한 턴의 오케스트레이션 (아키텍처 §5.2)
     guardrail.py        M-2 중립성 가드레일 (정규식 사전검사 → LLM 판정 → 재작성)
     pii.py              M-5 PII 마스킹 (저장 전, 결정론적)
     speech.py           STT/TTS
-    store.py            저장소 (Cloud SQL)
-    db.py               ORM · 커넥션
+    store.py            저장소 로직 (Cloud SQL Postgres)
+    db.py               ORM 테이블 · 커넥션 (SQLAlchemy + Cloud SQL Connector)
   routers/              projects(의뢰자) · public(응답자) · speech
   prompts/              가이드 생성 · 모더레이터 · 요약/집계/감정
+  _reference/           원본 레포에서 참고용으로만 가져온 코드. 그대로 쓰지 말 것.
 web/                    Next.js 14 App Router
   app/projects/         의뢰자 대시보드 (C-1~C-5)
   app/i/[projectId]/    응답자 인터뷰 (R-1~R-4)
+  components/           interview-flow · moderator-avatar · response-viewer
+  hooks/useAudio.ts     마이크 캡처
   lib/recorder-session.ts  MediaRecorder 순수 로직 — "절대 reject 하지 않는다" 계약
-_reference/             원본 레포에서 참고용으로만 가져온 코드. 그대로 쓰지 말 것.
+  _reference/           원본 레포 참고 코드 (survey-api.ts). 그대로 쓰지 말 것.
 ```
 
 ## 설계에서 물러서지 않은 것
@@ -58,12 +63,23 @@ _reference/             원본 레포에서 참고용으로만 가져온 코드.
 ## 로컬 실행
 
 ```bash
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r api/requirements.txt
-cp .env.example .env.local   # 값 채우기 (키는 Secret Manager 에서)
-./.venv/Scripts/python.exe -m uvicorn api.main:app --port 8099
+# 최초 1회 — venv + API 의존성
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r api/requirements.txt
 
+# 환경변수 — .env.example 을 복사해 값 채우기 (LLM 키는 Secret Manager 에)
+cp .env.example .env.local
+
+# API — .env.local 을 반드시 로드한다. 앱은 os.environ 만 읽으므로 --env-file 이 없으면
+# 키가 비어 /health 의 llm_key_present 가 false 가 된다.
+./.venv/Scripts/python.exe -m uvicorn api.main:app --port 8099 --env-file .env.local
+
+# 웹 — NEXT_PUBLIC_API_BASE 로 위 API 주소를 가리킨다 (미설정 시 http://localhost:8000)
 cd web && npm install && npm run dev
 ```
+
+로컬 DB 는 두 갈래다 (`db.py`): `INSTANCE_CONNECTION_NAME` 이 있으면 Cloud SQL Connector 로 붙고
+(gcloud ADC 인증 필요), 없으면 `DATABASE_URL` 로 로컬 Postgres 에 붙는다. 둘 다 없으면 기동 시 뜬다.
 
 테스트: `./.venv/Scripts/python.exe -m pytest api/tests -q`
 
@@ -91,4 +107,8 @@ cd web && npm install && npm run dev
 - **무인증이다.** IP 레이트리밋(60초 30회)만 있다. 링크를 아는 사람은 누구나 LLM 을 태울 수 있다.
 - **`_reference/` 는 한양대 프로젝트 원본 코드다.** 재사용의 계약상 검토가 끝나지 않았다 — 이 레포를 공개로 바꾸기 전에 반드시 확인할 것.
 
-자세한 이식 경위와 판단 근거는 [`PORTING.md`](PORTING.md).
+## 더 읽을 것
+
+- [`PORTING.md`](PORTING.md) — 이식 경위와 판단 근거
+- [`design.md`](design.md) — 디자인 토큰 스펙 (SSOT 는 `web/styles/globals.css`)
+- [`CLAUDE.md`](CLAUDE.md) — 에이전트 작업 가이드 (명령어·불변 계약·gstack 워크플로)
