@@ -43,6 +43,8 @@ class InterviewState(TypedDict, total=False):
 
     # 턴 스크래치 — 매 턴 덮어씀
     utterance: str
+    answered_qid: str          # 이번 발화가 답한 문항 — reflect_ledger 의 대상
+    resp_turn_id: str          # 이번 응답자 턴의 DB id — reflect_emotion 의 패치 대상
     draft: str
     action: str                # probe | advance | close
     question_id: str

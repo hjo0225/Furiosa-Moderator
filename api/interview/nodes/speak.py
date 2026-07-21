@@ -42,5 +42,5 @@ def speak(state: InterviewState) -> dict:
         "asked": asked,
         "probe_streak": (state.get("probe_streak", 0) + 1) if state.get("is_probe") else 0,
         "draft": "",
-        "utterance": "",
+        # utterance 는 리셋하지 않는다 — 뒤따르는 reflect(슬로우패스)가 읽어야 한다
     }

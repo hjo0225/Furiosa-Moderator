@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 from ..prompts.interview_moderator import interview_moderator_system  # 생성 콜 시스템 (재수출)
 
 __all__ = [
-    "ListenOut", "ANALYST_SYSTEM", "analysis_user", "opening_user",
+    "ListenOut", "ReflectOut", "ANALYST_SYSTEM", "REFLECT_SYSTEM",
+    "analysis_user", "reflect_user", "opening_user",
     "generate_user", "farewell_user", "interview_moderator_system",
 ]
 
@@ -22,10 +23,7 @@ ACTIONS = ("probe", "clarify", "challenge", "advance", "revisit", "redirect", "c
 
 
 class ListenOut(BaseModel):
-    # --- 분석 (취재 수첩) ---
-    facts: list[str] = Field(default_factory=list)   # 직전 답변에서 알아낸 사실
-    hooks: list[str] = Field(default_factory=list)   # 파고들 만한데 안 판 떡밥
-    coverage: Literal["touched", "satisfied", "saturated"] = "touched"
+    # 슬림 분석 (T4) — 취재 수첩 정리(facts/hooks/coverage)는 슬로우패스 ReflectOut 으로 이사
     contradiction: str = ""    # 앞선 발언과 모순이면 그 내용 한 줄 (없으면 "")
     # --- 전략 (행동 7종) ---
     action: Literal["probe", "clarify", "challenge", "advance", "revisit", "redirect", "close"] = "advance"
@@ -83,9 +81,7 @@ def analysis_user(
         f"[조사 목표]\n{guide.get('goal', '') or '(목표 미기재)'}\n\n"
         f"[지금까지 대화] (진행자 질문 {asked}회)\n{_convo(messages, utterance)}\n\n"
         f"[응답자의 직전 답변]\n{utterance or '(없음)'}\n\n"
-        "직전 답변을 취재 수첩에 정리하세요 — facts(알아낸 사실)·hooks(안 판 떡밥)·"
-        "coverage(touched/satisfied/saturated).\n"
-        "앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
+        "직전 답변을 앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
         f"(지금 문항에서 연속 {probe_streak}회 파고들었습니다. 2회를 넘겼으면 다른 행동을 고려하세요. "
         "표면에 머물면 구체화, 사례가 나왔으면 심화 — probe_type 에 기록.)\n\n"
         f"[아직 다루지 않은 문항]\n{pending_block or '(전부 다룸)'}\n"
@@ -148,4 +144,29 @@ def farewell_user(messages: list) -> str:
         f"[지금까지 대화]\n{_convo(messages, '') or '(대화 없음)'}\n\n"
         "인터뷰를 마무리합니다. 응답자가 말해준 내용을 한 가지 짚으며 "
         "진심 어린 감사 인사로 마치세요. 1~2문장, 새 질문 금지."
+    )
+
+
+# --- 슬로우패스 (reflect) — 취재 수첩 정리, 응답자가 말하는 시간에 돈다 (T4) ------
+
+class ReflectOut(BaseModel):
+    facts: list[str] = Field(default_factory=list)
+    hooks: list[str] = Field(default_factory=list)
+    coverage: Literal["touched", "satisfied", "saturated"] = "touched"
+
+
+REFLECT_SYSTEM = (
+    "당신은 정성조사 인터뷰의 기록 담당입니다. 방금 오간 한 문답을 취재 수첩에 정리합니다.\n"
+    "- facts: 답변에서 실제로 알아낸 사실 (짧은 문장, 없으면 빈 배열)\n"
+    "- hooks: 걸려 있는데 아직 안 판 떡밥 (없으면 빈 배열)\n"
+    "- coverage: 이 문항의 상태 — 더 나올 수 있으면 touched, '알아낼 것'을 채웠으면 satisfied, "
+    "더 캐도 안 나올 것 같으면 saturated"
+)
+
+
+def reflect_user(question_text: str, goal: str, utterance: str) -> str:
+    return (
+        f"[문항]\n{question_text} (알아낼 것: {goal})\n\n"
+        f"[응답자의 답변]\n{utterance}\n\n"
+        "위 문답을 수첩에 정리하세요."
     )

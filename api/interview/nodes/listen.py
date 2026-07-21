@@ -1,7 +1,9 @@
-"""listen — 발화 대기(interrupt) + 분석 콜 (T3 콜 분리).
+"""listen — 발화 대기(interrupt) + 슬림 분석 콜 (T4).
 
-분석 콜은 질문 문장을 만들지 않는다 — 취재 수첩 정리와 행동 7종 선택만.
-질문 생성은 generate, 마무리 인사는 farewell 의 일.
+취재 수첩 정리(facts/hooks/coverage)는 슬로우패스(reflect_ledger)로 이사 — 이 콜은
+행동 선택·모순 감지만 해서 가볍다(패스트패스 첫 토큰 단축의 핵심).
+원장 신선도는 한 칸 밀린다(직전 턴까지 반영) — 분석가는 발화 원문을 직접 보므로
+판단 재료 손실은 없다(의도된 계약).
 interrupt() 는 여전히 노드 첫 문장 — 재실행 멱등 규약.
 """
 from __future__ import annotations
@@ -10,14 +12,18 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import interrupt
 
 from ...services.llm_client import get_llm
-from ..ledger import update_ledger
 from ..prompts import ANALYST_SYSTEM, ListenOut, analysis_user
 from ..state import InterviewState
 
 
 def listen(state: InterviewState) -> dict:
-    utterance = interrupt({"waiting": "respondent"})  # 여기서 잠든다 — 재개값 = 마스킹된 발화
-    utterance = (utterance or "").strip()
+    resume = interrupt({"waiting": "respondent"})     # 여기서 잠든다 — 재개값 = 마스킹된 발화
+    if isinstance(resume, dict):
+        utterance = (resume.get("text") or "").strip()
+        turn_id = resume.get("turn_id", "")
+    else:                                             # 구 체크포인트(문자열 resume) 재개 방어
+        utterance = (resume or "").strip()
+        turn_id = ""
 
     prev_qid = state.get("question_id", "")           # 응답자가 방금 답한 문항
     out, _ = get_llm().structured(
@@ -27,13 +33,14 @@ def listen(state: InterviewState) -> dict:
             state.get("asked", 0), state.get("probe_streak", 0), state.get("ledger", {}),
         ),
         ListenOut,
-        max_tokens=700,
+        max_tokens=500,
     )
     return {
         "messages": [HumanMessage(content=utterance)],
         "utterance": utterance,
-        "ledger": update_ledger(state.get("ledger", {}), prev_qid, out.coverage, out.facts, out.hooks),
-        "analysis": {"contradiction": out.contradiction, "reason": out.reason, "coverage": out.coverage},
+        "answered_qid": prev_qid,
+        "resp_turn_id": turn_id,
+        "analysis": {"contradiction": out.contradiction, "reason": out.reason},
         "action": out.action,
         "question_id": out.question_id or prev_qid,
         "probe_type": out.probe_type,

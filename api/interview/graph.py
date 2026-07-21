@@ -7,18 +7,24 @@ START → generate(오프닝) → guard → speak ─done→ END
 from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
 
 from .nodes.farewell import farewell
 from .nodes.generate import generate
 from .nodes.guard import guard
 from .nodes.listen import listen
+from .nodes.reflect import reflect_ledger
 from .nodes.speak import speak
 from .nodes.strategize import strategize
 from .state import InterviewState
 
 
-def _after_speak(state: InterviewState) -> str:
-    return END if state.get("done") else "listen"
+def _after_speak(state: InterviewState):
+    if state.get("done"):
+        return END
+    if state.get("utterance") and state.get("answered_qid"):
+        return [Send("reflect_ledger", state)]       # 슬로우패스 — 사람의 시간에 숨는다
+    return "listen"                                   # 오프닝 턴 — 정리할 문답이 없다
 
 
 def _route_action(state: InterviewState) -> str:
@@ -33,11 +39,13 @@ def build_graph(checkpointer):
     g.add_node("guard", guard)
     g.add_node("speak", speak)
     g.add_node("farewell", farewell)
+    g.add_node("reflect_ledger", reflect_ledger)
     g.add_edge(START, "generate")
     g.add_edge("listen", "strategize")
     g.add_conditional_edges("strategize", _route_action, {"farewell": "farewell", "generate": "generate"})
     g.add_edge("generate", "guard")
     g.add_edge("guard", "speak")
     g.add_edge("farewell", "speak")
-    g.add_conditional_edges("speak", _after_speak, {END: END, "listen": "listen"})
+    g.add_conditional_edges("speak", _after_speak)
+    g.add_edge("reflect_ledger", "listen")
     return g.compile(checkpointer=checkpointer)

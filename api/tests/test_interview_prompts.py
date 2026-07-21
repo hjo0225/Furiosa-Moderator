@@ -20,6 +20,7 @@ def test_listen_out_has_seven_actions_no_message():
     assert set(ListenOut.model_fields["action"].annotation.__args__) == {
         "probe", "clarify", "challenge", "advance", "revisit", "redirect", "close"}
     assert "message" not in ListenOut.model_fields          # 생성은 generate 의 일
+    assert "facts" not in ListenOut.model_fields             # 수첩 정리는 reflect 로 이사 (T4)
 
 
 def test_opening_exposes_only_first_question():
@@ -55,3 +56,10 @@ def test_generate_user_varies_by_action():
 
 def test_farewell_user_mentions_thanks():
     assert "감사" in farewell_user([])
+
+
+def test_reflect_out_and_prompt():
+    from api.interview.prompts import ReflectOut, reflect_user
+    assert set(ReflectOut.model_fields) == {"facts", "hooks", "coverage"}
+    u = reflect_user("갈아탄 계기는?", "전환 트리거", "쿠폰 때문에요")
+    assert "갈아탄 계기는?" in u and "쿠폰 때문에요" in u and "전환 트리거" in u

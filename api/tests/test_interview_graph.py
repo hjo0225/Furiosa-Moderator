@@ -11,7 +11,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from api.interview.graph import build_graph
-from api.interview.prompts import ListenOut
+from api.interview.prompts import ListenOut, ReflectOut
 from api.interview.state import init_ledger
 from api.schemas.models import GuideQuestion, InterviewGuide, Turn
 
@@ -75,7 +75,8 @@ def fakes(monkeypatch):
 
     def set_llm(outs=(), texts=()):
         llm = FakeLLM(outs, texts)
-        for m in (listen_mod, gen_mod, fw_mod):
+        from api.interview.nodes import reflect as ref_mod
+        for m in (listen_mod, gen_mod, fw_mod, ref_mod):
             monkeypatch.setattr(m, "get_llm", lambda llm=llm: llm)
         return llm
 
@@ -110,7 +111,8 @@ def test_resume_probe_then_close_ends(fakes):
     fs, set_llm = fakes
     set_llm(
         outs=[ListenOut(action="probe", question_id="q1", probe_type="심화"),
-              ListenOut(action="close")],
+              ReflectOut(),                                   # 턴1 슬로우패스 원장 정리
+              ListenOut(action="close")],                     # 턴2 는 close → reflect 없음
         texts=["오프닝?", "어느 정도일 때 부담되세요?", "말씀 감사했습니다. 여기서 마칠게요."],
     )
     g = build_graph(InMemorySaver())
@@ -225,7 +227,7 @@ def test_turn_uses_graph_engine_when_flag_set(monkeypatch):
 
 def test_messages_accumulate_in_state(fakes):
     fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="probe", question_id="q1")],
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
             texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -238,15 +240,15 @@ def test_messages_accumulate_in_state(fakes):
 
 def test_listen_updates_ledger_and_probe_streak(fakes):
     fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="probe", question_id="q1",
-                            coverage="touched", facts=["배민 사용"], hooks=["배민클럽"])],
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"),
+                  ReflectOut(coverage="touched", facts=["배민 사용"], hooks=["배민클럽"])],
             texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
     g.invoke(Command(resume="배민 써요, 배민클럽 때문에"), config)
     v = g.get_state(config).values
-    assert v["ledger"]["q1"]["facts"] == ["배민 사용"]
+    assert v["ledger"]["q1"]["facts"] == ["배민 사용"]       # reflect 가 갱신했다
     assert v["ledger"]["q1"]["hooks"] == ["배민클럽"]
     assert v["probe_streak"] == 1
     assert v["analysis"]["reason"] == ""                     # 분석 스냅숏 저장 확인
@@ -257,7 +259,7 @@ def test_honest_close_when_all_satisfied(fakes):
     led = init_ledger(GUIDE.model_dump())
     for q in led:
         led[q]["status"] = "satisfied"
-    set_llm(outs=[ListenOut(action="probe", question_id="q2", coverage="satisfied")],
+    set_llm(outs=[ListenOut(action="probe", question_id="q2")],
             texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s2"}}
@@ -274,7 +276,9 @@ def test_new_actions_reach_generate_with_directives(fakes):
     fs, set_llm = fakes
     llm = set_llm(
         outs=[ListenOut(action="challenge", contradiction="가격 안 본다더니 최저가만 찾음"),
-              ListenOut(action="redirect")],
+              ReflectOut(),
+              ListenOut(action="redirect"),
+              ReflectOut()],
         texts=["오프닝?", "챌린지 질문?", "복귀 질문?"],
     )
     g = build_graph(InMemorySaver())
@@ -293,7 +297,7 @@ def test_revisit_demoted_without_thin_question(fakes):
     # → 원장에 touched(빈약) 문항이 하나도 없다 = revisit 근거 없음
     led = init_ledger(GUIDE.model_dump())
     led["q1"]["status"] = "satisfied"
-    set_llm(outs=[ListenOut(action="revisit", question_id="q2")],
+    set_llm(outs=[ListenOut(action="revisit", question_id="q2"), ReflectOut()],
             texts=["오프닝?", "질문?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -308,7 +312,7 @@ def test_revisit_target_corrected_to_thin(fakes):
     fs, set_llm = fakes
     led = init_ledger(GUIDE.model_dump())
     led["q1"]["status"] = "touched"                           # 빈약 문항은 q1 뿐
-    set_llm(outs=[ListenOut(action="revisit", question_id="q2")],   # 잘못된 대상
+    set_llm(outs=[ListenOut(action="revisit", question_id="q2"), ReflectOut()],   # 잘못된 대상
             texts=["오프닝?", "재방문 질문?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -332,6 +336,28 @@ def test_farewell_skips_guard(fakes, monkeypatch):
     _start(g, config)
     g.invoke(Command(resume="네"), config)
     assert calls == ["오프닝?"]                               # 오프닝만 검수, 인사는 미경유
+
+
+# --- T4: 슬로우패스 (reflect) ----------------------------------------------------
+
+def test_reflect_runs_before_next_interrupt(fakes):
+    fs, set_llm = fakes
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut(facts=["사실1"])],
+            texts=["오프닝?", "꼬리?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    r = g.invoke(Command(resume="답변"), config)
+    assert "__interrupt__" in r                              # 다음 interrupt 에서 잠들었고
+    assert g.get_state(config).values["ledger"]["q1"]["facts"] == ["사실1"]  # 원장은 이미 갱신됨
+
+
+def test_opening_turn_skips_reflect(fakes):
+    fs, set_llm = fakes
+    llm = set_llm(texts=["오프닝?"])                          # structured 큐가 비어 있다
+    g = build_graph(InMemorySaver())
+    _start(g, {"configurable": {"thread_id": "s1"}})
+    assert llm.outs == [] and llm.structured_prompts == []    # 오프닝은 분석·reflect 콜 없음
 
 
 # --- T3: 비답변 단락 (엔진) ------------------------------------------------------
