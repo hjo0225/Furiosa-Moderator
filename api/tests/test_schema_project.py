@@ -16,6 +16,7 @@ def test_store_project_maps_material_text():
 
     row = SimpleNamespace(
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
+        motivation="", utilization="",
         material_text="자료", discord_webhook_url="", status="draft",
         created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
@@ -33,6 +34,7 @@ def test_store_project_maps_discord_webhook_url():
     from api.services import store
     row = SimpleNamespace(
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
+        motivation="", utilization="",
         material_text="", discord_webhook_url="https://x", status="draft",
         created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
@@ -66,7 +68,10 @@ def test_create_project_passes_webhook(monkeypatch):
     monkeypatch.setattr(projects.store, "create_project",
                         lambda p: captured.update(url=p.discord_webhook_url) or p)
 
-    projects.create_project(ProjectCreateIn(topic="주제", discord_webhook_url="https://discord.com/api/webhooks/1/abc"))
+    projects.create_project(ProjectCreateIn(
+        topic="주제", target="대상", motivation="동기", utilization="활용",  # 브리프 4필드 필수
+        discord_webhook_url="https://discord.com/api/webhooks/1/abc",
+    ))
     assert captured["url"] == "https://discord.com/api/webhooks/1/abc"
 
 
