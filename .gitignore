@@ -26,3 +26,13 @@ CLAUDE.md
 
 # 서브에이전트 작업 스크래치 (브리프·리포트·diff·진행원장)
 .superpowers/
+
+# 내부 설계·기획 문서·실험 로그 — git 미추적, 로컬 참고용 (팀 공유 안 함)
+/LANGGRAPH_PLAN.md
+/docs/TICKETS.md
+/docs/experiments/
+/docs/interview-graph.html
+/docs/langgraph-plan.html
+/docs/superpowers/plans/2026-07-21-ticket-0-foundation.md
+/docs/superpowers/plans/2026-07-21-ticket-1-graph-skeleton.md
+/docs/superpowers/plans/2026-07-21-ticket-2-state-ledger.md
