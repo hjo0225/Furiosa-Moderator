@@ -38,9 +38,10 @@ def _extract_pdf(raw: bytes) -> str:
     try:
         reader = PdfReader(io.BytesIO(raw))
         # 스캔 PDF 는 텍스트 레이어가 없어 각 페이지가 "" 를 반환한다 — 에러가 아니다.
-        return "\n".join((p.extract_text() or "") for p in reader.pages).strip()
+        pages = [(p.extract_text() or "") for p in reader.pages]
     except Exception as e:  # noqa: BLE001 — pypdf 는 다양한 예외를 던진다(깨진 PDF)
         raise MaterialError(f"PDF 를 읽을 수 없습니다: {e}") from e
+    return "\n".join(pages).strip()
 
 
 def cap(text: str) -> tuple[str, bool]:

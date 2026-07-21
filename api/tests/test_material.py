@@ -49,6 +49,20 @@ def test_extract_scanned_pdf_returns_empty(monkeypatch):
     assert extract_text("scan.pdf", b"%PDF") == ""
 
 
+def test_extract_corrupt_pdf_raises(monkeypatch):
+    def boom(*a, **k):
+        raise ValueError("broken xref")
+
+    monkeypatch.setattr("pypdf.PdfReader", boom)
+    with pytest.raises(MaterialError):
+        extract_text("broken.pdf", b"%PDF garbage")
+
+
+def test_extract_text_undecodable_raises():
+    with pytest.raises(MaterialError):
+        extract_text("brief.txt", b"\xff\xfe\xfd")
+
+
 def test_cap_truncates_over_limit():
     text, truncated = cap("가" * (MATERIAL_CHAR_CAP + 100))
     assert len(text) == MATERIAL_CHAR_CAP
