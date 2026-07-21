@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button, buttonVariants, Container } from "@/components/shared";
+import { BackLink, Button, buttonVariants, Container } from "@/components/shared";
 import { createProject, uploadMaterial } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -59,9 +59,7 @@ export function NewProjectForm() {
   return (
     <main className="py-10 md:py-16">
       <Container className="max-w-2xl">
-        <Link href="/projects" className="font-mono text-2xs uppercase text-ink-faint">
-          ← 내 프로젝트
-        </Link>
+        <BackLink href="/projects">내 프로젝트</BackLink>
         <h1 className="mt-3 text-title">새 프로젝트</h1>
         <p className="mt-2 text-base text-ink-soft">
           알고 싶은 것을 적으면 인터뷰 가이드를 만들어 드려요. 참고 자료를 올리면 도메인을 반영해요.
