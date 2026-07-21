@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from ..config import get_settings
 from ..interview import engine as graph_engine
@@ -80,6 +82,40 @@ def turn(pid: str, sid: str, body: TurnIn) -> TurnOut:
         guardrail_rewritten=mod_turn.guardrail_rewritten,
         emotion="",
     )
+
+
+@router.post("/{pid}/sessions/{sid}/turn/stream")
+def turn_stream(pid: str, sid: str, body: TurnIn):
+    """R-2 SSE 판 — 토큰을 흘리고 마지막에 meta 이벤트. 구엔진이면 완성문을 단일 흐름으로."""
+    session = store.get_session(pid, sid)
+    if not session:
+        raise HTTPException(404, "세션을 찾을 수 없습니다.")
+    if session.status == "completed":
+        raise HTTPException(409, "이미 종료된 인터뷰입니다.")
+    guide = store.get_guide(pid)
+    if not guide:
+        raise HTTPException(500, "가이드가 없습니다.")
+
+    use_graph = get_settings().interview_engine == "graph" and graph_engine.ready()
+
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    def gen():
+        try:
+            if use_graph:
+                for event in graph_engine.stream_turn(pid, session, guide, body.text, body.lang):
+                    yield _sse(event)
+            else:
+                message, done, _, mod_turn = moderator.next_turn(pid, session, guide, body.text, body.lang)
+                yield _sse({"token": message})
+                yield _sse({"meta": {"message": message, "done": done, "asked": session.asked,
+                                     "is_probe": mod_turn.is_probe,
+                                     "guardrail_rewritten": mod_turn.guardrail_rewritten}})
+        except LLMError as e:
+            yield _sse({"error": f"인터뷰 진행에 실패했습니다: {e}"})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.post("/{pid}/sessions/{sid}/submit", response_model=Session)

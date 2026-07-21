@@ -106,3 +106,51 @@ def next_turn(
         guardrail_rewritten=bool(result.get("rewritten")),
     )
     return message, done, respondent_turn, moderator_turn
+
+
+def stream_turn(
+    project_id: str, session: Session, guide: InterviewGuide, respondent_text: str, lang: str = "ko"
+):
+    """SSE 용 제너레이터 — {"token": ...}* 뒤 {"meta": {...}} 하나.
+
+    토큰이 다 나간 뒤 reflect(슬로우패스)가 도는 동안에도 스트림만 열려 있을 뿐
+    사용자는 이미 질문을 받았다 — 슬로우패스를 사람의 시간에 숨기는 지점.
+    """
+    text = (respondent_text or "").strip()
+    retry = _non_answer_reply(project_id, session.id, text)
+    if retry is not None:
+        log.info("무의미 발화 — 그래프를 깨우지 않고 되묻는다 (session=%s)", session.id)
+        yield {"token": retry.text}
+        yield {"meta": {"message": retry.text, "done": False, "asked": session.asked,
+                        "is_probe": False, "guardrail_rewritten": False}}
+        return
+
+    g = get_graph()
+    sid = session.id
+    config = {"configurable": {"thread_id": sid}}
+
+    respondent_turn: Turn | None = None
+    masked = ""
+    if text:
+        pii_types = scan_pii(text)
+        masked = mask_pii(text)
+        respondent_turn = store.add_turn(project_id, sid, Turn(
+            role="respondent", text=masked, pii_types=pii_types,
+        ))
+
+    if g.get_state(config).next:
+        payload = Command(resume={"text": masked,
+                                  "turn_id": respondent_turn.id if respondent_turn else ""})
+    else:
+        payload = initial_state(project_id, sid, lang, guide, session)
+
+    for chunk in g.stream(payload, config, stream_mode="custom"):
+        if isinstance(chunk, dict) and "token" in chunk:
+            yield {"token": chunk["token"]}
+
+    result = g.get_state(config).values
+    session.covered = list(result.get("covered", session.covered))
+    session.asked = int(result.get("asked", session.asked))
+    yield {"meta": {"message": result.get("message", ""), "done": bool(result.get("done")),
+                    "asked": session.asked, "is_probe": bool(result.get("is_probe")),
+                    "guardrail_rewritten": bool(result.get("rewritten"))}}

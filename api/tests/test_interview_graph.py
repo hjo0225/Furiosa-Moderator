@@ -388,6 +388,40 @@ def test_listen_accepts_plain_string_resume(fakes):
     assert "__interrupt__" in r                              # 정상 진행
 
 
+# --- T4: SSE 스트리밍 ------------------------------------------------------------
+
+def test_speak_emits_tokens_via_custom_stream(fakes):
+    fs, set_llm = fakes
+    set_llm(texts=["안녕하세요! 어떤 배달앱을 쓰세요?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    chunks = []
+    for mode, payload in g.stream(
+        {"project_id": "p1", "session_id": "s1", "lang": "ko",
+         "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
+         "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
+        config, stream_mode=["custom", "values"],
+    ):
+        if mode == "custom":
+            chunks.append(payload["token"])
+    assert "".join(chunks) == "안녕하세요! 어떤 배달앱을 쓰세요?"   # 토큰 합 = 최종 발화
+
+
+def test_engine_stream_turn_yields_tokens_then_meta(fakes, monkeypatch):
+    from api.interview import engine as eng
+    fs, set_llm = fakes
+    set_llm(texts=["오프닝 질문?"])
+    g = build_graph(InMemorySaver())
+    monkeypatch.setattr(eng, "get_graph", lambda: g)
+    monkeypatch.setattr(eng, "store", fs)
+
+    from api.schemas.models import Session
+    events = list(eng.stream_turn("p1", Session(id="s1", project_id="p1"), GUIDE, ""))
+    assert events and all("token" in e for e in events[:-1])  # 토큰 이벤트들이 먼저
+    meta = events[-1]["meta"]
+    assert meta["message"] == "오프닝 질문?" and meta["done"] is False and meta["asked"] == 1
+
+
 # --- T3: 비답변 단락 (엔진) ------------------------------------------------------
 
 def test_non_answer_short_circuits_without_waking_graph(monkeypatch):

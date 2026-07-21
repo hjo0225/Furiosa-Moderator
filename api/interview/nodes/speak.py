@@ -6,17 +6,30 @@ SSE 스트리밍 연결은 T4.
 """
 from __future__ import annotations
 
+import re
+
 from langchain_core.messages import AIMessage
+from langgraph.config import get_stream_writer
 
 from ...schemas.models import Turn
 from ...services import store
 from ..ledger import update_ledger
 from ..state import InterviewState
 
+_CHUNK = re.compile(r"\S+\s*")   # 어절 단위 재생 — TTS 클라이언트가 즉시 읽기 시작할 수 있게
+
 
 def speak(state: InterviewState) -> dict:
     pid, sid = state["project_id"], state["session_id"]
     message = state.get("message", "")
+    # guard 를 통과한 완성문을 토큰으로 방출(재생 스트리밍 — guard 앞 배치는 §11 v1 결정).
+    # 방출 → 저장 순서지만 둘 다 이 노드 안에서 끝난다 — '저장 완료 후 잠듦' 불변식 유지.
+    try:
+        writer = get_stream_writer()
+        for m in _CHUNK.finditer(message):
+            writer({"token": m.group(0)})
+    except Exception:  # invoke 경로 등 스트림 컨텍스트가 없으면 그냥 진행
+        pass
     store.add_turn(pid, sid, Turn(
         role="moderator",
         text=message,
