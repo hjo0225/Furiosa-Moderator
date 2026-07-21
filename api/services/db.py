@@ -45,6 +45,7 @@ class ProjectRow(Base):
     topic: Mapped[str] = mapped_column(Text)
     target: Mapped[str] = mapped_column(Text, default="")
     material_text: Mapped[str] = mapped_column(Text, default="")
+    discord_webhook_url: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 

@@ -46,6 +46,7 @@ class Project(BaseModel):
     topic: str
     target: str = ""             # 대상 조건
     material_text: str = ""      # 조사 참고 자료 원문 (협업자 기능)
+    discord_webhook_url: str = ""  # 프로젝트별 알림 채널 override (비면 기본)
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
@@ -56,6 +57,12 @@ class ProjectCreateIn(BaseModel):
     topic: str
     title: str = ""
     target: str = ""
+    discord_webhook_url: str = ""
+
+
+class WebhookSetIn(BaseModel):
+    """프로젝트별 Discord 웹훅 설정/해제(빈 문자열이면 기본 채널로 폴백)."""
+    discord_webhook_url: str = ""
 
 
 class GuideGenerateIn(BaseModel):
