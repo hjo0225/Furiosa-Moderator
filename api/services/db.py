@@ -44,6 +44,7 @@ class ProjectRow(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     topic: Mapped[str] = mapped_column(Text)
     target: Mapped[str] = mapped_column(Text, default="")
+    material_text: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
@@ -172,5 +173,31 @@ def db_session():
 
 
 def init_schema() -> None:
-    """테이블 생성(멱등). 마이그레이션 도구는 MVP 범위 밖이라 create_all 로 둔다."""
-    Base.metadata.create_all(_engine())
+    """스키마 반영 — Alembic 이 단일 소스. 앱 startup 마다 upgrade head 를 적용한다.
+
+    기존 DB(테이블은 있는데 alembic_version 이 없는 '최초 도입' 시점)는 현재 스키마를
+    baseline 으로 stamp 한다 — 이미 있는 테이블을 다시 CREATE 하려다 터지는 걸 막는다.
+    새·빈 DB 는 baseline 부터 upgrade 해서 테이블을 만든다.
+
+    alembic 은 여기서만 import 한다(모듈 로드·테스트가 alembic 에 의존하지 않게).
+    """
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect
+
+    api_dir = Path(__file__).resolve().parent.parent   # api/
+    cfg = Config(str(api_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(api_dir / "alembic"))
+
+    eng = _engine()
+    with eng.connect() as conn:
+        insp = inspect(conn)
+        has_core = insp.has_table("projects")
+        has_version = insp.has_table("alembic_version")
+
+    if has_core and not has_version:
+        command.stamp(cfg, "head")   # 기존 스키마를 baseline 으로 채택
+    else:
+        command.upgrade(cfg, "head")

@@ -45,6 +45,7 @@ class Project(BaseModel):
     title: str = ""
     topic: str
     target: str = ""             # 대상 조건
+    material_text: str = ""      # 조사 참고 자료 원문 (협업자 기능)
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
