@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 
-from ..config import Settings
+import httpx
+
+from ..config import Settings, get_settings
 from ..prompts.insight import SESSION_SUMMARY_SYSTEM, session_summary_user
 from ..schemas.models import Session, Turn
 from ..services import store
@@ -102,3 +105,43 @@ def _build_payload(pid: str, sid: str, settings: Settings) -> dict | None:
         "transcript": transcript,
         "dashboard_url": f"{web_base}/projects/{pid}" if web_base else f"/projects/{pid}",
     }
+
+
+_TIMEOUT = 5.0
+_MAX_ATTEMPTS = 3   # 최초 1회 + 2회 재시도
+
+
+def _post(url: str, payload: dict) -> None:
+    """n8n 웹훅으로 POST. 타임아웃·재시도. 최종 실패는 예외로 올린다(호출부가 흡수)."""
+    last: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            r = httpx.post(url, json=payload, timeout=_TIMEOUT)
+            r.raise_for_status()
+            return
+        except Exception as e:   # noqa: BLE001 — 네트워크 오류 전부
+            last = e
+            if attempt < _MAX_ATTEMPTS - 1:
+                time.sleep(0.5 * (2 ** attempt))   # 0.5s, 1s 백오프
+    raise last if last else RuntimeError("알림 전송 실패")
+
+
+def emit_session_completed(pid: str, sid: str) -> None:
+    """제출 완료 알림 진입점. 백그라운드에서 호출된다.
+
+    URL 미설정이면 조용히 skip. 어떤 예외도 밖으로 던지지 않는다 —
+    알림 실패가 인터뷰를 깨선 안 된다.
+    """
+    settings = get_settings()
+    if not settings.n8n_webhook_url:
+        log.debug("N8N_WEBHOOK_URL 미설정 — 알림 skip (project=%s session=%s)", pid, sid)
+        return
+    try:
+        payload = _build_payload(pid, sid, settings)
+        if payload is None:
+            log.warning("알림 payload 없음 — 세션 미발견 (project=%s session=%s)", pid, sid)
+            return
+        _post(settings.n8n_webhook_url, payload)
+        log.info("n8n 알림 전송 (project=%s session=%s)", pid, sid)
+    except Exception as e:   # noqa: BLE001 — 알림은 본류를 막지 않는다
+        log.warning("n8n 알림 실패 (project=%s session=%s): %s", pid, sid, e)

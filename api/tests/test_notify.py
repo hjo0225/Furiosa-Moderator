@@ -90,3 +90,55 @@ def test_build_payload_none_when_session_missing(monkeypatch):
     from api.config import Settings
     monkeypatch.setattr(notify.store, "get_session", lambda pid, sid: None)
     assert notify._build_payload("p_1", "s_x", Settings()) is None
+
+
+def test_emit_skips_when_url_unset(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+
+    monkeypatch.setattr(notify, "get_settings", lambda: Settings(n8n_webhook_url=""))
+    calls = []
+    monkeypatch.setattr(notify.httpx, "post", lambda *a, **k: calls.append((a, k)))
+
+    notify.emit_session_completed("p_1", "s_1")
+    assert calls == []   # URL 없으면 아무 것도 안 보냄
+
+
+def test_emit_posts_payload(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+
+    monkeypatch.setattr(notify, "get_settings",
+                        lambda: Settings(n8n_webhook_url="https://n8n.example/webhook/xyz"))
+    monkeypatch.setattr(notify, "_build_payload", lambda pid, sid, settings: {"event": "session.completed"})
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self): pass
+    def _fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return _Resp()
+    monkeypatch.setattr(notify.httpx, "post", _fake_post)
+
+    notify.emit_session_completed("p_1", "s_1")
+    assert captured["url"] == "https://n8n.example/webhook/xyz"
+    assert captured["json"] == {"event": "session.completed"}
+
+
+def test_emit_swallows_post_errors(monkeypatch):
+    from api.services import notify
+    from api.config import Settings
+
+    monkeypatch.setattr(notify, "get_settings",
+                        lambda: Settings(n8n_webhook_url="https://n8n.example/webhook/xyz"))
+    monkeypatch.setattr(notify, "_build_payload", lambda pid, sid, settings: {"event": "x"})
+
+    def _boom(url, json, timeout):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(notify.httpx, "post", _boom)
+    monkeypatch.setattr(notify.time, "sleep", lambda *_: None)   # 재시도 백오프 빨리감기
+
+    # 예외가 밖으로 새지 않아야 한다 — 실패해도 조용히 반환
+    notify.emit_session_completed("p_1", "s_1")
