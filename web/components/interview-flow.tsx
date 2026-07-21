@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ModeratorAvatar } from "@/components/moderator-avatar";
+import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
 import { sendTurn, submitSession, transcribeAudio } from "@/lib/api";
 import { initialVoiceInput, reduceVoiceInput, type VoiceInputState } from "@/lib/voice-input";
@@ -178,35 +179,31 @@ export function InterviewFlow({
   // --- 시작 전 화면 --------------------------------------------------------
   if (phase === "idle") {
     return (
-      <div className="flex min-h-[26rem] flex-col items-center justify-center gap-5 rounded-2xl bg-surface p-8 text-center shadow-card">
+      <Card className="flex min-h-[26rem] flex-col items-center justify-center gap-5 p-8 text-center">
         <div className="w-32">
           <ModeratorAvatar speaking={false} getLevel={tts.getLevel} />
         </div>
-        <p className="max-w-sm text-base leading-relaxed text-ink-soft">
+        <p className="max-w-md text-lead leading-relaxed text-ink-soft">
           {en
             ? "A moderator will guide the interview by voice. Answer by speaking or typing, then press Next."
             : "진행자가 음성으로 질문을 드립니다. 말하거나 입력해 답한 뒤 '다음'을 눌러 주세요."}
         </p>
-        <button
-          type="button"
-          onClick={begin}
-          className="rounded-full bg-accent-solid px-6 py-3 text-base font-medium text-accent-on shadow-card"
-        >
+        <Button type="button" size="lg" onClick={begin}>
           {en ? "Start interview" : "인터뷰 시작"}
-        </button>
+        </Button>
         {error && <p className="text-meta text-nogo">{error}</p>}
         {!tts.available && (
           <p className="text-2xs text-ink-faint">
             {en ? "(Voice playback unavailable — text only)" : "(음성 재생 비활성 — 텍스트로 진행)"}
           </p>
         )}
-      </div>
+      </Card>
     );
   }
 
   // --- 인터뷰 화면 (아바타 | 카드) -----------------------------------------
   return (
-    <div className="grid gap-5 rounded-2xl bg-surface p-5 shadow-card sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
+    <Card className="grid gap-5 p-5 sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
       {/* 왼쪽 — 진행자 아바타 */}
       <div className="flex flex-col items-center gap-3">
         <ModeratorAvatar speaking={tts.speaking} getLevel={tts.getLevel} />
@@ -217,7 +214,7 @@ export function InterviewFlow({
       <div className="flex min-h-[20rem] flex-col">
         {phase === "review" || phase === "done" ? (
           <div className="flex flex-1 flex-col justify-center gap-3 text-center">
-            <p className="text-lead leading-relaxed text-ink">{question}</p>
+            <p className="text-2xl leading-relaxed text-ink">{question}</p>
             {phase === "done" ? (
               <p className="text-meta text-ink-soft">{en ? "Submitted. Thank you!" : "제출됐어요. 감사합니다!"}</p>
             ) : (
@@ -227,14 +224,15 @@ export function InterviewFlow({
                     ? "That's the end of the interview. Submit to send your answers."
                     : "인터뷰가 끝났어요. 제출해야 답변이 전달됩니다."}
                 </p>
-                <button
+                <Button
                   type="button"
+                  size="lg"
                   onClick={() => void submit()}
                   disabled={submitting}
-                  className="mx-auto rounded-full bg-accent-solid px-6 py-3 text-base font-medium text-accent-on shadow-card disabled:opacity-40"
+                  className="self-center"
                 >
                   {submitting ? (en ? "Submitting…" : "제출 중…") : en ? "Submit answers" : "답변 제출하기"}
-                </button>
+                </Button>
                 <p className="text-2xs text-ink-faint">
                   {en
                     ? "Your answers are only counted once submitted."
@@ -248,7 +246,7 @@ export function InterviewFlow({
           <>
             {/* 질문 */}
             <div className="flex items-start gap-2">
-              <p className="flex-1 text-lead leading-relaxed text-ink">
+              <p className="flex-1 text-2xl leading-relaxed text-ink">
                 {busy ? (
                   <span className="animate-pulse text-ink-faint">
                     {en ? "Moderator is thinking…" : "진행자가 다음 질문을 준비 중…"}
@@ -321,10 +319,10 @@ export function InterviewFlow({
                       goNext();
                     }
                   }}
-                  rows={2}
+                  rows={3}
                   disabled={!canType}
                   placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
-                  className="flex-1 resize-none rounded-lg bg-bg px-3 py-2 text-base text-ink ring-1 ring-line placeholder:text-ink-faint/60 focus:outline-none focus:ring-accent disabled:opacity-60"
+                  className={fieldClass("flex-1 resize-none text-lead")}
                 />
                 <button
                   type="button"
@@ -339,6 +337,6 @@ export function InterviewFlow({
           </>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

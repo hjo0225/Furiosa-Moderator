@@ -8,13 +8,13 @@ import hashlib
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..config import get_settings
 from ..interview import engine as graph_engine
 from ..schemas.models import ConsentLog, Session, SessionStartIn, TurnIn, TurnOut
-from ..services import moderator, store
+from ..services import moderator, notify, store
 from ..services.llm_client import LLMError
 
 log = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ def turn_stream(pid: str, sid: str, body: TurnIn):
 
 
 @router.post("/{pid}/sessions/{sid}/submit", response_model=Session)
-def submit(pid: str, sid: str) -> Session:
+def submit(pid: str, sid: str, background_tasks: BackgroundTasks) -> Session:
     """R-4 제출 — 이 시점에야 '응답 1건'이 된다.
 
     진행자가 done 을 냈다고 세션이 완료된 게 아니다. 응답자가 직접 제출해야 completed 로
@@ -129,7 +129,7 @@ def submit(pid: str, sid: str) -> Session:
     if not session:
         raise HTTPException(404, "세션을 찾을 수 없습니다.")
     if session.status == "completed":
-        return session   # 멱등 — 재전송·중복 클릭으로 실패시키지 않는다
+        return session   # 멱등 — 재전송·중복 클릭으로 실패시키지 않는다(알림도 재발사 안 함)
     if session.status not in ("active", "pending"):
         # consented(한 마디도 안 함) / abandoned — 제출할 답변이 없다.
         raise HTTPException(400, "제출할 답변이 없습니다.")
@@ -140,4 +140,6 @@ def submit(pid: str, sid: str) -> Session:
         pid, sid, {"status": "completed", "ended_at": datetime.now(timezone.utc)}
     )
     log.info("세션 제출 완료 (project=%s session=%s)", pid, sid)
+    # 알림은 백그라운드로 — 응답자 응답을 막지 않는다. 실패해도 제출은 성공이다.
+    background_tasks.add_task(notify.emit_session_completed, pid, sid)
     return store.get_session(pid, sid) or session

@@ -3,7 +3,7 @@
 // C-2 인터뷰 가이드 검토·수정 + C-3 배포(응답자 링크 발급).
 import { useCallback, useEffect, useState } from "react";
 
-import { Button } from "@/components/shared";
+import { Button, buttonVariants, Card } from "@/components/shared";
 import {
   ApiError,
   deployProject,
@@ -180,7 +180,7 @@ export function GuidePanel({
 
   if (!guide) {
     return (
-      <div className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
+      <Card className="p-8 text-center">
         <p className="text-base text-ink-soft">
           아직 인터뷰 가이드가 없어요. 주제를 바탕으로 초안을 만들어 드릴게요.
         </p>
@@ -188,14 +188,14 @@ export function GuidePanel({
         <Button className="mt-5" onClick={generate} disabled={busy === "generate"}>
           {busy === "generate" ? "만드는 중…" : "가이드 생성하기"}
         </Button>
-      </div>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
       {/* 조사 목표 */}
-      <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+      <Card className="p-5">
         <label className="block">
           <span className="text-meta font-medium text-ink-soft">조사 목표</span>
           <textarea
@@ -209,10 +209,10 @@ export function GuidePanel({
         <p className="mt-2 font-mono text-2xs text-ink-faint">
           v{guide.version} · 진행자는 이 목표를 기준으로 꼬리질문을 이어갑니다
         </p>
-      </div>
+      </Card>
 
       {/* 문항 */}
-      <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lead font-medium">질문 {questions.length}개</h3>
           <Button size="sm" variant="outline" onClick={generate} disabled={busy === "generate"}>
@@ -279,7 +279,7 @@ export function GuidePanel({
         <Button size="sm" variant="ghost" className="mt-3" onClick={addQuestion}>
           + 질문 추가
         </Button>
-      </div>
+      </Card>
 
       {message && <p className="text-meta text-go">{message}</p>}
       {error && <p className="text-meta text-nogo">{error}</p>}
@@ -315,7 +315,7 @@ export function GuidePanel({
               href={link}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center rounded-full px-4 text-meta font-medium text-accent underline"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               새 탭에서 열기
             </a>

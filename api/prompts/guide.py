@@ -6,13 +6,18 @@
 """
 
 GUIDE_SYSTEM = (
-    "당신은 정성조사 설계 전문가입니다. 주어진 조사 주제와 대상으로부터 "
-    "1:1 음성 인터뷰용 가이드를 만듭니다.\n"
+    "당신은 정성조사 설계 전문가입니다. 주어진 조사 브리프(목적·대상·동기·활용 방안)와 "
+    "참고 자료로부터 1:1 음성 인터뷰용 가이드를 만듭니다.\n"
     "규칙:\n"
     "- goal 에는 이 조사 전체가 알아내려는 것을 한두 문장으로 씁니다.\n"
     "- questions 는 5~7개. 순서는 쉬운 것(경험·사실) → 어려운 것(의견·평가·개선) 순으로.\n"
-    "- 각 문항의 text 는 진행자가 실제로 말할 법한 짧은 구어체 질문 1문장.\n"
-    "- 각 문항의 goal 에는 '이 질문으로 알아내려는 것'을 한 줄로. 커버리지 판정에 쓰입니다.\n"
+    "- 각 문항의 text 는 진행자가 실제로 말할 법한 구어체 질문 **딱 1문장**. "
+    "물음표(?)는 문항당 1개만 — 질문 여러 개를 이어 붙이지 마세요. "
+    "꼬리질문은 인터뷰 중 진행자가 실시간으로 만듭니다.\n"
+    "- 각 문항의 goal 에는 '이 질문으로 알아내려는 것'을 한 줄로. 커버리지 판정에 쓰입니다. "
+    "이 내용은 **goal 필드에만** 넣으세요. text 안에 '이 질문으로 알아내려는 것: …'처럼 "
+    "이어 쓰는 것을 금지합니다.\n"
+    '  올바른 예: {"text": "평소 아침은 어떻게 해결하세요?", "goal": "아침 식사 패턴 파악"}\n'
     "- 유도신문 금지: 답을 정해놓고 끌어내는 질문, 전제·방향을 깐 질문은 만들지 마세요. "
     "'얼마나 불편하셨나요?'(불편을 전제) 대신 '그때 어떠셨나요?'처럼 열어두세요.\n"
     "- 예/아니오로 끝나는 닫힌 질문은 피하고 이야기가 나오는 개방형으로 쓰세요.\n"
@@ -23,8 +28,22 @@ GUIDE_SYSTEM = (
 )
 
 
-def guide_user(topic: str, target: str = "", material: str = "") -> str:
-    target_line = f"\n[대상] {target}" if target else ""
+def guide_user(
+    topic: str,
+    target: str = "",
+    material: str = "",
+    motivation: str = "",
+    utilization: str = "",
+) -> str:
+    # topic 은 UI 의 '조사 목적' 필드다(라벨만 바뀌고 필드는 그대로).
+    lines = [f"[조사 목적] {topic}"]
+    if target:
+        lines.append(f"[타깃 대상] {target}")
+    if motivation:
+        lines.append(f"[조사 동기] {motivation}")
+    if utilization:
+        lines.append(f"[활용 방안] {utilization}")
+    brief = "\n".join(lines)
     material_block = ""
     if material.strip():
         material_block = (
@@ -34,8 +53,8 @@ def guide_user(topic: str, target: str = "", material: str = "") -> str:
             f"{material}"
         )
     return (
-        f"[조사 주제] {topic}{target_line}\n\n"
-        "위 주제로 음성 인터뷰 가이드를 만드세요. "
+        f"{brief}\n\n"
+        "위 브리프로 음성 인터뷰 가이드를 만드세요. "
         "questions 의 order 는 0부터 차례로, id 는 q1, q2 … 형식으로 채우세요."
         f"{material_block}"
     )

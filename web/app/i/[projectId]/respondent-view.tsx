@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { InAppBridge } from "@/components/in-app-bridge";
 import { InterviewFlow } from "@/components/interview-flow";
+import { Button, Card } from "@/components/shared";
 import {
   getPublicProject,
   startSession,
@@ -56,17 +57,21 @@ export function RespondentView({ projectId }: { projectId: string }) {
   return (
     <>
       <InAppBridge />
-      <main className="mx-auto min-h-screen w-full max-w-lg px-4 py-8 sm:px-6 sm:py-12">
+      <main
+        className={`mx-auto min-h-screen w-full px-4 py-8 sm:px-6 sm:py-12 ${
+          stage === "interview" ? "max-w-3xl" : "max-w-lg"
+        }`}
+      >
         {loadError ? (
-          <div className="rounded-2xl bg-surface p-8 text-center shadow-card">
+          <Card className="p-8 text-center">
             <p className="text-base text-ink-soft">{loadError}</p>
-          </div>
+          </Card>
         ) : !project ? (
           <p className="animate-pulse text-center font-mono text-meta text-ink-faint">
             불러오는 중…
           </p>
         ) : project.status === "closed" ? (
-          <div className="rounded-2xl bg-surface p-8 text-center shadow-card">
+          <Card className="p-8 text-center">
             <p className="text-2xl" aria-hidden>
               🙏
             </p>
@@ -74,7 +79,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
             <p className="mt-2 text-meta leading-relaxed text-ink-soft">
               이 인터뷰는 모집이 끝났어요. 관심 가져주셔서 감사합니다.
             </p>
-          </div>
+          </Card>
         ) : stage === "consent" ? (
           <section>
             <p className="eyebrow">음성 인터뷰</p>
@@ -85,7 +90,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
             </p>
 
             {/* R-1 — 수집 목적·항목·보관기간을 명시하고, 동의 없이는 진행할 수 없다 */}
-            <div className="mt-6 rounded-2xl bg-surface p-5 shadow-card ring-1 ring-line">
+            <Card className="mt-6 p-5">
               <h2 className="text-base font-medium text-ink">개인정보 수집·이용 동의</h2>
               <dl className="mt-4 space-y-3 text-meta leading-relaxed">
                 <div>
@@ -126,18 +131,19 @@ export function RespondentView({ projectId }: { projectId: string }) {
                   위 내용을 읽고 개인정보 수집·이용에 <b>동의합니다.</b>
                 </span>
               </label>
-            </div>
+            </Card>
 
             {startError && <p className="mt-3 text-meta text-nogo">{startError}</p>}
 
-            <button
+            <Button
               type="button"
+              size="lg"
               onClick={begin}
               disabled={!agreed || starting}
-              className="mt-5 w-full rounded-full bg-accent-solid px-6 py-4 text-lead font-medium text-accent-on shadow-card transition-all disabled:opacity-40"
+              className="mt-5 w-full"
             >
               {starting ? "준비 중…" : "동의하고 인터뷰 시작"}
-            </button>
+            </Button>
             {!agreed && (
               <p className="mt-2 text-center text-2xs text-ink-faint">
                 동의해 주셔야 인터뷰를 시작할 수 있어요.
@@ -158,7 +164,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
           </section>
         ) : (
           /* R-4 완료 */
-          <section className="rounded-2xl bg-surface p-8 text-center shadow-card">
+          <section className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
             <p className="text-3xl" aria-hidden>
               ✅
             </p>

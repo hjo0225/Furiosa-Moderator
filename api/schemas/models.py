@@ -8,11 +8,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_DISCORD_WEBHOOK_PREFIXES = (
+    "https://discord.com/api/webhooks/",
+    "https://discordapp.com/api/webhooks/",
+)
+
+
+def _validate_webhook_url(v: str) -> str:
+    """빈 문자열(해제) 또는 Discord 웹훅 URL 만 허용한다 (SSRF 차단)."""
+    v = (v or "").strip()
+    if v and not v.startswith(_DISCORD_WEBHOOK_PREFIXES):
+        raise ValueError("Discord 웹훅 URL 이어야 합니다 (https://discord.com/api/webhooks/...).")
+    return v
 
 
 # --- 의뢰자 -----------------------------------------------------------------
@@ -43,9 +57,12 @@ class Project(BaseModel):
     id: str = ""
     owner: str = "anonymous"     # MVP 무인증 — 링크 소유 기반
     title: str = ""
-    topic: str
-    target: str = ""             # 대상 조건
+    topic: str                   # 조사 목적 (UI 라벨: 조사 목적)
+    target: str = ""             # 타깃 대상
+    motivation: str = ""         # 조사 동기
+    utilization: str = ""        # 활용 방안
     material_text: str = ""      # 의뢰자 업로드 자료 (가이드 생성 프롬프트 주입용)
+    discord_webhook_url: str = Field(default="", exclude=True)  # 응답 노출 금지(시크릿). 저장·라우팅엔 사용.
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
@@ -53,9 +70,27 @@ class Project(BaseModel):
 
 
 class ProjectCreateIn(BaseModel):
-    topic: str
+    topic: str                   # 조사 목적
     title: str = ""
-    target: str = ""
+    target: str = ""             # 타깃 대상
+    motivation: str = ""         # 조사 동기
+    utilization: str = ""        # 활용 방안
+    discord_webhook_url: str = ""
+
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def _v_webhook(cls, v: str) -> str:
+        return _validate_webhook_url(v)
+
+
+class WebhookSetIn(BaseModel):
+    """프로젝트별 Discord 웹훅 설정/해제(빈 문자열이면 기본 채널로 폴백)."""
+    discord_webhook_url: str = ""
+
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def _v_webhook(cls, v: str) -> str:
+        return _validate_webhook_url(v)
 
 
 class GuideGenerateIn(BaseModel):

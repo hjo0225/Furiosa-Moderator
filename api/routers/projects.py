@@ -11,9 +11,10 @@ import os
 from fastapi import APIRouter, HTTPException, UploadFile
 
 from ..briefing import pipeline as briefing_pipeline
-from ..services.material import MaterialError, cap, extract_text
+from ..services.material import SUMMARIZE_THRESHOLD, MaterialError, cap, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
+from ..prompts.material import MATERIAL_SUMMARY_SYSTEM, material_summary_user
 from ..prompts.insight import (
     INSIGHT_SYSTEM,
     SESSION_SUMMARY_SYSTEM,
@@ -22,10 +23,12 @@ from ..prompts.insight import (
 )
 from ..schemas.models import (
     GuideGenerateIn,
+    GuideQuestion,
     Insight,
     InterviewGuide,
     Project,
     ProjectCreateIn,
+    WebhookSetIn,
 )
 from ..services import store
 from ..services.llm_client import LLMError, get_llm
@@ -43,13 +46,34 @@ def _require(pid: str) -> Project:
 
 @router.post("", response_model=Project)
 def create_project(body: ProjectCreateIn) -> Project:
-    """C-1 주제 입력·프로젝트 생성 → 상태=draft."""
-    if not body.topic.strip():
-        raise HTTPException(400, "주제를 입력하세요.")
+    """C-1 조사 브리프 입력·프로젝트 생성 → 상태=draft. 브리프 4개 필드는 모두 필수."""
+    required = {
+        "조사 목적": body.topic,
+        "타깃 대상": body.target,
+        "동기": body.motivation,
+        "활용 방안": body.utilization,
+    }
+    missing = [name for name, v in required.items() if not v.strip()]
+    if missing:
+        raise HTTPException(400, f"{' · '.join(missing)}을(를) 입력하세요.")
     return store.create_project(
-        Project(topic=body.topic.strip(), title=body.title.strip() or body.topic.strip()[:40],
-                target=body.target.strip())
+        Project(
+            topic=body.topic.strip(),
+            title=body.title.strip() or body.topic.strip()[:40],
+            target=body.target.strip(),
+            motivation=body.motivation.strip(),
+            utilization=body.utilization.strip(),
+            discord_webhook_url=body.discord_webhook_url.strip(),
+        )
     )
+
+
+@router.put("/{pid}/webhook", response_model=Project)
+def set_webhook(pid: str, body: WebhookSetIn) -> Project:
+    """프로젝트별 Discord 웹훅 override 설정. 빈 문자열이면 기본 채널로 폴백."""
+    _require(pid)
+    store.update_project(pid, {"discord_webhook_url": body.discord_webhook_url.strip()})
+    return _require(pid)
 
 
 @router.get("", response_model=list[Project])
@@ -62,6 +86,39 @@ def get_project(pid: str) -> Project:
     return _require(pid)
 
 
+class _GenQuestion(GuideQuestion):
+    """생성 전용 스키마 — goal 을 필수로 승격.
+
+    저장·수정용 GuideQuestion 의 goal 은 default("") 라 LLM 스키마에서 required 가 아니고,
+    Qwen3 는 required 아닌 필드를 통째로 생략하는 실사고가 났다. 필수로 승격하면
+    비워 보낸 응답이 검증에서 떨어져 structured() 의 자가교정 재시도가 발동한다.
+    """
+
+    goal: str
+
+
+class _GenGuide(InterviewGuide):
+    questions: list[_GenQuestion]
+
+
+_GOAL_MARKER = "이 질문으로 알아내려는 것"
+
+
+def _split_goal_from_text(q: GuideQuestion) -> None:
+    """모델이 goal 을 text 뒤에 이어 붙여 보내는 실사고 보정(결정론).
+
+    goal 에 default("") 가 있어 스키마 검증은 통과해 버린다 — order/id 확정과
+    같은 계열의 서버 보정으로 분리한다. 프롬프트로도 금지하지만 재발 대비 이중 방어.
+    """
+    if _GOAL_MARKER not in q.text:
+        return
+    head, _, tail = q.text.partition(_GOAL_MARKER)
+    q.text = head.strip().rstrip("·:：-—").strip()
+    tail = tail.strip().lstrip(":：").strip()
+    if tail and not q.goal.strip():
+        q.goal = tail
+
+
 @router.post("/{pid}/guide", response_model=InterviewGuide)
 def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     """C-2 가이드 자동 생성."""
@@ -70,13 +127,18 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     target = body.target.strip() or p.target
     try:
         guide, _ = get_llm().structured(
-            GUIDE_SYSTEM, guide_user(topic, target, p.material_text), InterviewGuide, max_tokens=2000
+            GUIDE_SYSTEM,
+            guide_user(topic, target, p.material_text, p.motivation, p.utilization),
+            _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
+            max_tokens=2000,
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e
 
-    # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다.
+    # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
+    # 사고도 여기서 결정론으로 분리한다.
     for i, q in enumerate(guide.questions):
+        _split_goal_from_text(q)
         q.order = i
         q.id = q.id or f"q{i + 1}"
     guide.goal = guide.goal or topic
@@ -88,7 +150,12 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 @router.post("/{pid}/material")
 async def upload_material(pid: str, file: UploadFile) -> dict:
-    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝)."""
+    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝).
+
+    자료가 SUMMARIZE_THRESHOLD 를 넘으면 자르는 대신 LLM 으로 요약해 저장한다
+    (자르면 뒷부분 도메인 맥락이 통째로 사라지므로). 요약이 실패해도 업로드는 죽지 않고
+    cap() 자르기로 후퇴한다.
+    """
     _require(pid)
     raw = await file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
@@ -97,9 +164,21 @@ async def upload_material(pid: str, file: UploadFile) -> dict:
         text = extract_text(file.filename or "", raw)
     except MaterialError as e:
         raise HTTPException(400, str(e)) from e
+
+    summarized = False
+    if len(text) > SUMMARIZE_THRESHOLD:
+        try:
+            text, _ = get_llm().text(
+                MATERIAL_SUMMARY_SYSTEM, material_summary_user(text), max_tokens=2048
+            )
+            summarized = True
+        except LLMError as e:
+            log.warning("자료 요약 실패, 자르기로 후퇴 (project=%s): %s", pid, e)
+
+    # 요약을 건너뛰었거나 요약본이 여전히 길 경우의 최종 상한.
     text, truncated = cap(text)
     store.update_project(pid, {"material_text": text})
-    return {"project_id": pid, "chars": len(text), "truncated": truncated}
+    return {"project_id": pid, "chars": len(text), "truncated": truncated, "summarized": summarized}
 
 
 @router.get("/{pid}/guide", response_model=InterviewGuide)

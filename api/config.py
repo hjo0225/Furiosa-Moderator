@@ -50,6 +50,10 @@ class Settings(BaseModel):
     # 인터뷰 엔진: legacy(구엔진 moderator.py) | graph(LangGraph, TICKET-1+)
     interview_engine: str = "legacy"
 
+    # --- 알림 (Discord) ------------------------------------------------------
+    discord_webhook_url: str = ""   # 비면 알림 비활성
+    public_web_base: str = ""       # 대시보드 링크 베이스
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -68,4 +72,6 @@ def get_settings() -> Settings:
         stt_model=env.get("STT_MODEL", Settings().stt_model),
         cors_origins=env.get("CORS_ORIGINS", "*"),
         interview_engine=env.get("INTERVIEW_ENGINE", "legacy"),
+        discord_webhook_url=env.get("DISCORD_WEBHOOK_URL", ""),
+        public_web_base=env.get("PUBLIC_WEB_BASE", ""),
     )

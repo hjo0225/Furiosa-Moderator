@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button, Card } from "@/components/shared";
 import { isInAppBrowser } from "@/lib/in-app-browser";
 
 export function InAppBridge() {
@@ -37,7 +38,7 @@ export function InAppBridge() {
       aria-label="브라우저 변경 안내"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-5"
     >
-      <div className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-card">
+      <Card className="w-full max-w-sm p-6 text-center">
         <div className="text-4xl" aria-hidden>
           🌐
         </div>
@@ -53,13 +54,10 @@ export function InAppBridge() {
           <br />
           Copy the link and open it in <b className="text-ink">Chrome / Safari</b>.
         </p>
-        <button
-          onClick={copyLink}
-          className="mt-5 w-full rounded-full bg-accent-solid px-6 py-3 text-base font-semibold text-accent-on shadow-card transition-all hover:brightness-105 active:scale-[0.98]"
-        >
+        <Button type="button" onClick={copyLink} className="mt-5 w-full">
           {copied ? "✓ 복사됨 / Copied" : "링크 복사하기 / Copy link"}
-        </button>
-      </div>
+        </Button>
+      </Card>
     </div>
   );
 }

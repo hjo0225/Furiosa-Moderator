@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { Button } from "@/components/shared";
+import { Button, Card } from "@/components/shared";
 import { TranscriptView } from "@/components/response-viewer";
 import {
   getDashboard,
@@ -376,30 +376,30 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
 
             <div className="min-w-0">
               {!selected ? (
-                <div className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
+                <Card className="p-8 text-center">
                   <p className="text-base text-ink-soft">
                     왼쪽에서 응답자를 선택하면 대화 전문이 보여요.
                   </p>
-                </div>
+                </Card>
               ) : (
                 <div className="space-y-3">
                   {selected.summary && (
-                    <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+                    <Card className="p-5">
                       <p className="text-meta font-medium text-ink">요약</p>
                       <p className="mt-2 whitespace-pre-line text-meta leading-relaxed text-ink-soft">
                         {selected.summary}
                       </p>
-                    </div>
+                    </Card>
                   )}
                   {selected.covered.length > 0 && (
-                    <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+                    <Card className="p-5">
                       <p className="text-meta font-medium text-ink">다룬 질문</p>
                       <p className="mt-1 font-mono text-2xs text-ink-faint">
                         {selected.covered.length}개 · {selected.covered.join(", ")}
                       </p>
-                    </div>
+                    </Card>
                   )}
-                  <div className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+                  <Card className="p-5">
                     <p className="mb-3 text-meta font-medium text-ink">🎙 인터뷰 대화 전사</p>
                     {turns === null ? (
                       <p className="animate-pulse font-mono text-meta text-ink-faint">
@@ -408,7 +408,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                     ) : (
                       <TranscriptView turns={turns} />
                     )}
-                  </div>
+                  </Card>
                 </div>
               )}
             </div>
