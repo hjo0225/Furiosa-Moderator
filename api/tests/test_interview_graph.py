@@ -161,8 +161,8 @@ def test_guard_rewrites_leading_question(fakes):
 def test_conn_string_normalizes_pg8000_url(monkeypatch):
     from api.interview import checkpoint
     monkeypatch.delenv("INSTANCE_CONNECTION_NAME", raising=False)
-    monkeypatch.setenv("DATABASE_URL", "postgresql+pg8000://u:p@localhost:5432/mindlens")
-    assert checkpoint.conn_string() == "postgresql://u:p@localhost:5432/mindlens"
+    monkeypatch.setenv("DATABASE_URL", "postgresql+pg8000://localhost:5432/mindlens")
+    assert checkpoint.conn_string() == "postgresql://localhost:5432/mindlens"
 
 
 def test_conn_string_uses_cloudsql_socket(monkeypatch):
