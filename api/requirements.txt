@@ -8,3 +8,4 @@ google-cloud-texttospeech==2.21.1
 sqlalchemy==2.0.36
 pg8000==1.31.2
 cloud-sql-python-connector==1.16.0
+pypdf==5.1.0
