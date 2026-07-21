@@ -54,17 +54,19 @@ TICKET-0 ─▶ TICKET-1 ─▶ TICKET-2 ──┬─▶ TICKET-3
 **목표.** 인터뷰 하나를 **살아있는 실행 하나**로 만들고(스레드화), 만능 1콜을 **역할별 노드**로 쪼갠다. LLM 호출 수는 지금과 동일 — 콜 증가가 아니라 역할 분리.
 
 **작업.**
-- [ ] `api/interview/graph.py` — interrupt 루프: 세션 시작=그래프 시작 · `interrupt()`로 발화 대기 · `Command(resume)`로 재개 · `END`로 종료
-- [ ] `thread_id = session_id`
-- [ ] 노드 5개: `listen` / `strategize` / `generate` / `guard` / `speak`
-- [ ] `PostgresSaver` 체크포인터 연결 (`setup()`)
-- [ ] `routers/public.py`: turn → `Command(resume=마스킹된 발화)`
-- [ ] PII 마스킹은 그래프 진입 전 HTTP 핸들러에서 (전역 불변식)
-- [ ] interrupt 앞 로직 멱등 보장, 저장은 `speak`에서
-- [ ] `main.py` `_GUARDED` 확장
-- [ ] 구엔진(`moderator.py`)은 플래그로 병행
+- [x] `api/interview/graph.py` — interrupt 루프: 세션 시작=그래프 시작 · `interrupt()`로 발화 대기 · `Command(resume)`로 재개 · `END`로 종료
+- [x] `thread_id = session_id`
+- [x] 노드 5개: `listen` / `strategize` / `generate` / `guard` / `speak`
+- [x] `PostgresSaver` 체크포인터 연결 (`setup()`)
+- [x] `routers/public.py`: turn → `Command(resume=마스킹된 발화)`
+- [x] PII 마스킹은 그래프 진입 전 HTTP 핸들러에서 (전역 불변식)
+- [x] interrupt 앞 로직 멱등 보장, 저장은 `speak`에서
+- [x] `main.py` `_GUARDED` 확장
+- [x] 구엔진(`moderator.py`)은 플래그로 병행
 
 **검증.** 기존 pytest 통과 + **턴 지연 실측**.
+
+**결과(2026-07-21).** 완료 — pytest 27개 통과(그래프 신규 8). 지연 실측: 구엔진 평균 3.06s vs 그래프 3.26s(**+0.21s**, 목표 ±0.3s 내). T1은 파리티 우선 — 기존 프롬프트 1콜 유지, 콜 분리는 T3. `_GUARDED`는 확장 불필요 확인(turn 경로가 기존 `/api/public/` 커버). `INTERVIEW_ENGINE=graph` 플래그로 활성(기본 legacy). PostgresSaver `setup()` 라이브 확인은 DB env 있는 배포 환경 몫(Cloud Run은 `--add-cloudsql-instances` 필요). 브랜치 `feat/langgraph-ticket-1`.
 
 **의존성.** TICKET-0 (`chat`, langgraph 설치, 체크포인트 테이블).
 
@@ -75,14 +77,16 @@ TICKET-0 ─▶ TICKET-1 ─▶ TICKET-2 ──┬─▶ TICKET-3
 **목표.** 대화·커버리지·페이스를 **그래프 State로** 옮겨 체크포인트가 저장할 대상을 만든다. 커버리지를 출석부(`covered=[q1,q2]`)에서 **취재 수첩(원장)**으로 바꾼다.
 
 **작업.**
-- [ ] `api/interview/state.py`: `InterviewState` (messages+`add_messages` · ledger · asked · probe_streak · analysis · plan · draft · done · end_reason)
-- [ ] `CoverageEntry`: `status`(pending/touched/satisfied/saturated) · `facts`(알아낸 것) · `hooks`(안 판 떡밥)
-- [ ] 출석부 → 원장 전환 및 갱신 로직 (v1은 노드 내 갱신; 슬로우패스 이사는 TICKET-4)
-- [ ] **정직한 종료**: "문항 다 입에 올림"이 아니라 모든 goal이 `satisfied`이거나 `saturated`일 때
-- [ ] revisit 근거 확보 (빈약 문항 재방문 판단 재료)
-- [ ] 대시보드용 도메인 테이블은 그대로 유지 (이원화가 의도된 설계)
+- [x] `api/interview/state.py`: `InterviewState` (messages+`add_messages` · ledger · asked · probe_streak · analysis · plan · draft · done · end_reason)
+- [x] `CoverageEntry`: `status`(pending/touched/satisfied/saturated) · `facts`(알아낸 것) · `hooks`(안 판 떡밥)
+- [x] 출석부 → 원장 전환 및 갱신 로직 (v1은 노드 내 갱신; 슬로우패스 이사는 TICKET-4)
+- [x] **정직한 종료**: "문항 다 입에 올림"이 아니라 모든 goal이 `satisfied`이거나 `saturated`일 때
+- [x] revisit 근거 확보 (빈약 문항 재방문 판단 재료)
+- [x] 대시보드용 도메인 테이블은 그대로 유지 (이원화가 의도된 설계)
 
 **검증.** `stats`로 **probe율 비교** (기존 대비).
+
+**결과(2026-07-21).** 완료 — pytest 34개 통과. probe율 실측(동일 대본 6턴): 구엔진 **33%** → 그래프 **67%** (원장 컨텍스트가 파고들 근거 제공). 원장에 문항별 facts/hooks 정상 축적 확인. listen의 store 의존 제거(매 턴 기억 재조립 해소). `end_reason`(model_done/max_turns/honest_close) 기록 추가. analysis·plan 필드는 T3 콜 분리 때 도입. 브랜치 `feat/langgraph-ticket-1`에 T2 커밋 3개.
 
 **의존성.** TICKET-1 (그래프가 State를 소유하는 구조).
 
