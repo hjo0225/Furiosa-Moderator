@@ -19,8 +19,6 @@ __all__ = [
     "generate_user", "farewell_user", "interview_moderator_system",
 ]
 
-ACTIONS = ("probe", "clarify", "challenge", "advance", "revisit", "redirect", "close")
-
 
 class ListenOut(BaseModel):
     # 슬림 분석 (T4) — 취재 수첩 정리(facts/hooks/coverage)는 슬로우패스 ReflectOut 으로 이사

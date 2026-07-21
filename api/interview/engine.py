@@ -60,6 +60,35 @@ def _non_answer_reply(project_id: str, sid: str, text: str) -> Turn | None:
     return Turn(role="moderator", text=message, question_id=prev.question_id)
 
 
+def _prepare(
+    project_id: str, session: Session, guide: InterviewGuide, text: str, lang: str
+) -> tuple:
+    """next_turn/stream_turn 공통 준비 — 그래프 핸들·config·payload(재개|시작)·저장된 응답자 턴.
+
+    PII 마스킹→응답자 턴 저장이 그래프 진입 '전'이라는 전역 불변식의 단일 지점.
+    emotion 은 슬로우패스(reflect_emotion)가 사후 기입하므로 여기선 비워서 저장한다.
+    """
+    g = get_graph()
+    sid = session.id
+    config = {"configurable": {"thread_id": sid}}
+
+    respondent_turn: Turn | None = None
+    masked = ""
+    if text:
+        pii_types = scan_pii(text)
+        masked = mask_pii(text)
+        respondent_turn = store.add_turn(project_id, sid, Turn(
+            role="respondent", text=masked, pii_types=pii_types,
+        ))
+
+    if g.get_state(config).next:          # interrupt 에서 잠들어 있다 → 재개
+        payload = Command(resume={"text": masked,
+                                  "turn_id": respondent_turn.id if respondent_turn else ""})
+    else:                                 # 첫 호출 → 그래프 시작(오프닝)
+        payload = initial_state(project_id, sid, lang, guide, session)
+    return g, config, payload, respondent_turn
+
+
 def next_turn(
     project_id: str, session: Session, guide: InterviewGuide, respondent_text: str, lang: str = "ko"
 ) -> tuple[str, bool, Turn | None, Turn]:
@@ -72,28 +101,8 @@ def next_turn(
         log.info("무의미 발화 — 그래프를 깨우지 않고 되묻는다 (session=%s)", session.id)
         return retry.text, False, None, retry
 
-    g = get_graph()
-    sid = session.id
-    config = {"configurable": {"thread_id": sid}}
-
-    respondent_turn: Turn | None = None
-    masked = ""
-    if text:
-        pii_types = scan_pii(text)
-        masked = mask_pii(text)
-        # emotion 은 슬로우패스(reflect_emotion)가 사후 기입한다 — 여기선 비워서 저장
-        respondent_turn = store.add_turn(project_id, sid, Turn(
-            role="respondent", text=masked, pii_types=pii_types,
-        ))
-
-    if g.get_state(config).next:          # interrupt 에서 잠들어 있다 → 재개
-        result = g.invoke(
-            Command(resume={"text": masked,
-                            "turn_id": respondent_turn.id if respondent_turn else ""}),
-            config,
-        )
-    else:                                 # 첫 호출 → 그래프 시작(오프닝)
-        result = g.invoke(initial_state(project_id, sid, lang, guide, session), config)
+    g, config, payload, respondent_turn = _prepare(project_id, session, guide, text, lang)
+    result = g.invoke(payload, config)
 
     message = result.get("message", "")
     done = bool(result.get("done"))
@@ -125,25 +134,7 @@ def stream_turn(
                         "is_probe": False, "guardrail_rewritten": False}}
         return
 
-    g = get_graph()
-    sid = session.id
-    config = {"configurable": {"thread_id": sid}}
-
-    respondent_turn: Turn | None = None
-    masked = ""
-    if text:
-        pii_types = scan_pii(text)
-        masked = mask_pii(text)
-        respondent_turn = store.add_turn(project_id, sid, Turn(
-            role="respondent", text=masked, pii_types=pii_types,
-        ))
-
-    if g.get_state(config).next:
-        payload = Command(resume={"text": masked,
-                                  "turn_id": respondent_turn.id if respondent_turn else ""})
-    else:
-        payload = initial_state(project_id, sid, lang, guide, session)
-
+    g, config, payload, _ = _prepare(project_id, session, guide, text, lang)
     for chunk in g.stream(payload, config, stream_mode="custom"):
         if isinstance(chunk, dict) and "token" in chunk:
             yield {"token": chunk["token"]}

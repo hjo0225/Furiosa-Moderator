@@ -46,7 +46,7 @@ class InterviewState(TypedDict, total=False):
     answered_qid: str          # 이번 발화가 답한 문항 — reflect_ledger 의 대상
     resp_turn_id: str          # 이번 응답자 턴의 DB id — reflect_emotion 의 패치 대상
     draft: str
-    action: str                # probe | advance | close
+    action: str                # 행동 7종: probe | clarify | challenge | advance | revisit | redirect | close
     question_id: str
     is_probe: bool
     probe_type: str            # probe 일 때 래더링 단계: 구체화 | 심화 (로그 관찰용)
