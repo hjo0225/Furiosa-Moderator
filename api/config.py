@@ -47,6 +47,8 @@ class Settings(BaseModel):
     # --- 앱 ------------------------------------------------------------------
     cors_origins: str = "*"
     max_audio_bytes: int = 10 * 1024 * 1024
+    # 인터뷰 엔진: legacy(구엔진 moderator.py) | graph(LangGraph, TICKET-1+)
+    interview_engine: str = "legacy"
 
 
 @lru_cache
@@ -65,4 +67,5 @@ def get_settings() -> Settings:
         stt_location=env.get("STT_LOCATION", Settings().stt_location),
         stt_model=env.get("STT_MODEL", Settings().stt_model),
         cors_origins=env.get("CORS_ORIGINS", "*"),
+        interview_engine=env.get("INTERVIEW_ENGINE", "legacy"),
     )

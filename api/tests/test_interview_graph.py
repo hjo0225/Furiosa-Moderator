@@ -160,3 +160,52 @@ def test_conn_string_uses_cloudsql_socket(monkeypatch):
     monkeypatch.setenv("DB_NAME", "mindlens")
     s = checkpoint.conn_string()
     assert "host=/cloudsql/proj:asia-northeast3:db" in s and "dbname=mindlens" in s
+
+
+# --- 엔진 플래그 라우팅 ---------------------------------------------------------
+
+def _stub_router_deps(monkeypatch, pub):
+    from api.schemas.models import Session
+
+    monkeypatch.setattr(pub.store, "get_session", lambda p, s: Session(id="s1", project_id="p1"))
+    monkeypatch.setattr(pub.store, "get_guide", lambda p: GUIDE)
+
+
+def _spy_engine(called, name):
+    def fake_next_turn(*a, **k):
+        called["engine"] = name
+        return "m", False, None, Turn(role="moderator", text="m")
+    return fake_next_turn
+
+
+def test_turn_uses_legacy_engine_by_default(monkeypatch):
+    import api.routers.public as pub
+    from api.config import get_settings
+    from api.schemas.models import TurnIn
+
+    monkeypatch.delenv("INTERVIEW_ENGINE", raising=False)
+    get_settings.cache_clear()
+    called = {}
+    monkeypatch.setattr(pub.moderator, "next_turn", _spy_engine(called, "legacy"))
+    _stub_router_deps(monkeypatch, pub)
+
+    pub.turn("p1", "s1", TurnIn(text=""))
+    assert called["engine"] == "legacy"
+    get_settings.cache_clear()
+
+
+def test_turn_uses_graph_engine_when_flag_set(monkeypatch):
+    import api.routers.public as pub
+    from api.config import get_settings
+    from api.schemas.models import TurnIn
+
+    monkeypatch.setenv("INTERVIEW_ENGINE", "graph")
+    get_settings.cache_clear()
+    called = {}
+    monkeypatch.setattr(pub.graph_engine, "ready", lambda: True)
+    monkeypatch.setattr(pub.graph_engine, "next_turn", _spy_engine(called, "graph"))
+    _stub_router_deps(monkeypatch, pub)
+
+    pub.turn("p1", "s1", TurnIn(text=""))
+    assert called["engine"] == "graph"
+    get_settings.cache_clear()

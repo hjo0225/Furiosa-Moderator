@@ -30,6 +30,10 @@ def _startup() -> None:
 
         init_schema()
         log.info("DB 스키마 준비 완료")
+        if get_settings().interview_engine == "graph":
+            from .interview import engine as graph_engine
+
+            log.info("그래프 엔진: %s", "준비 완료" if graph_engine.ready() else "실패 → 구엔진 폴백")
     except Exception as e:
         log.exception("DB 스키마 초기화 실패: %s", e)
 
