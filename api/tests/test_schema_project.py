@@ -17,7 +17,7 @@ def test_store_project_maps_material_text():
     row = SimpleNamespace(
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
         motivation="", utilization="",
-        material_text="자료", discord_webhook_url="", status="draft",
+        material_text="자료", discord_webhook_url="", screener=[], status="draft",
         created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
     p = store._project(row, 0, 0)
@@ -35,7 +35,7 @@ def test_store_project_maps_discord_webhook_url():
     row = SimpleNamespace(
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
         motivation="", utilization="",
-        material_text="", discord_webhook_url="https://x", status="draft",
+        material_text="", discord_webhook_url="https://x", screener=[], status="draft",
         created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
     p = store._project(row, 0, 0)

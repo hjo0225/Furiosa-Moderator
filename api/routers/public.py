@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from ..config import get_settings
 from ..interview import engine as graph_engine
-from ..schemas.models import ConsentLog, Session, SessionStartIn, TurnIn, TurnOut
+from ..schemas.models import ConsentLog, ScreenIn, Session, SessionStartIn, TurnIn, TurnOut
 from ..services import moderator, notify, store
 from ..services.llm_client import LLMError
 
@@ -21,15 +21,54 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/public/projects", tags=["respondent"])
 
 
+def screener_qualifies(screener: list, answers: dict) -> bool:
+    """스크리너 자격 판정(F4.3) — 순수 함수. 게이트 로직을 한 곳에 모아 테스트 가능하게 한다.
+
+    빈 스크리너면 무조건 통과. 그 외에는 **모든** 문항에서 응답자의 답(answers[q.id])이
+    그 문항의 pass_options 에 들어야 통과. 답이 없거나(미응답) pass_options 밖이면 탈락.
+    AND 조건인 이유: 스크리너는 '모든 자격을 갖춘 사람만' 태우려는 것이라 하나라도 어긋나면 부적격.
+    """
+    for q in screener:
+        if answers.get(q.id) not in (q.pass_options or []):
+            return False
+    return True
+
+
+def _public_screener(screener: list) -> list[dict]:
+    """응답자에게 내려줄 스크리너 — pass_options 는 벗겨낸다.
+
+    어느 답이 통과인지 노출되면 응답자가 골라 맞출 수 있어 스크리너가 무력화된다.
+    id·text·options 만 준다.
+    """
+    return [{"id": q.id, "text": q.text, "options": list(q.options or [])} for q in screener]
+
+
 @router.get("/{pid}")
 def public_project(pid: str) -> dict:
-    """링크 접속 시 보여줄 최소 정보."""
+    """링크 접속 시 보여줄 최소 정보. 스크리너는 통과 조건(pass_options)을 뺀 채로만 내려준다."""
     p = store.get_project(pid)
     if not p:
         raise HTTPException(404, "인터뷰를 찾을 수 없습니다.")
     if p.status != "deployed":
         raise HTTPException(403, "아직 배포되지 않은 인터뷰입니다.")
-    return {"id": p.id, "title": p.title, "topic": p.topic, "status": p.status}
+    return {
+        "id": p.id, "title": p.title, "topic": p.topic, "status": p.status,
+        "screener": _public_screener(p.screener),
+    }
+
+
+@router.post("/{pid}/screen")
+def screen(pid: str, body: ScreenIn) -> dict:
+    """F4.3 자격 판정 — 응답자의 스크리너 답으로 적격 여부만 돌려준다(pass_options 는 서버 안에서만).
+
+    무인증이라 판정은 반드시 서버에서 한다 — 클라이언트에 pass_options 를 주지 않는 이유와 같은 계약.
+    """
+    p = store.get_project(pid)
+    if not p:
+        raise HTTPException(404, "인터뷰를 찾을 수 없습니다.")
+    if p.status != "deployed":
+        raise HTTPException(403, "아직 배포되지 않은 인터뷰입니다.")
+    return {"qualified": screener_qualifies(p.screener, body.answers)}
 
 
 @router.post("/{pid}/sessions", response_model=Session)

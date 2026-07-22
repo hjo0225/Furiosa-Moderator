@@ -10,12 +10,14 @@ import { InterviewFlow } from "@/components/interview-flow";
 import { Button, Card } from "@/components/shared";
 import {
   getPublicProject,
+  screenParticipant,
   startSession,
   type PublicProject,
   type Session,
 } from "@/lib/api";
 
-type Stage = "consent" | "interview" | "done";
+// screener = 동의 후·인터뷰 전 자격 판정(F4.3). disqualified = 부적격 종료 화면.
+type Stage = "consent" | "screener" | "interview" | "done" | "disqualified";
 
 const RETENTION = "수집일로부터 1년";
 
@@ -28,6 +30,10 @@ export function RespondentView({ projectId }: { projectId: string }) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
+  // 스크리너 상태(F4.3) — {문항 id: 선택한 옵션}. 판정은 서버가 하고 여기선 답만 모은다.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [screening, setScreening] = useState(false);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   useEffect(() => {
     getPublicProject(projectId)
@@ -35,17 +41,52 @@ export function RespondentView({ projectId }: { projectId: string }) {
       .catch(() => setLoadError("인터뷰를 찾을 수 없어요. 링크를 다시 확인해 주세요."));
   }, [projectId]);
 
+  const screenerQs = project?.screener ?? [];
+  // 모든 문항에 답해야 다음으로 넘어간다 — 미응답은 서버에서 부적격 처리되므로 실수로 탈락하지 않게 막는다.
+  const allAnswered = screenerQs.every((q) => answers[q.id]);
+
+  async function startInterview() {
+    const s = await startSession(projectId, true, navigator.userAgent);
+    setSession(s);
+    setStage("interview");
+  }
+
   async function begin() {
     if (!agreed || starting) return;
+    // 스크리너가 있으면 세션을 만들기 전에 자격부터 확인한다(부적격이면 세션·집계 모수에 안 들어간다).
+    if (screenerQs.length) {
+      setStage("screener");
+      return;
+    }
     setStarting(true);
     setStartError(null);
     try {
-      const s = await startSession(projectId, true, navigator.userAgent);
-      setSession(s);
-      setStage("interview");
+      await startInterview();
     } catch {
       setStartError("인터뷰를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.");
       setStarting(false);
+    }
+  }
+
+  function pick(qid: string, opt: string) {
+    setScreenError(null);
+    setAnswers((a) => ({ ...a, [qid]: opt }));
+  }
+
+  async function submitScreener() {
+    if (screening || !allAnswered) return;
+    setScreening(true);
+    setScreenError(null);
+    try {
+      const { qualified } = await screenParticipant(projectId, answers);
+      if (!qualified) {
+        setStage("disqualified");
+        return;
+      }
+      await startInterview();   // 적격 → 바로 세션 시작
+    } catch {
+      setScreenError("확인 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.");
+      setScreening(false);
     }
   }
 
@@ -149,6 +190,80 @@ export function RespondentView({ projectId }: { projectId: string }) {
                 동의해 주셔야 인터뷰를 시작할 수 있어요.
               </p>
             )}
+          </section>
+        ) : stage === "screener" ? (
+          /* F4.3 참가 조건 — 동의 후·인터뷰 전 단일선택 자격 문항. 통과 조건은 서버만 안다. */
+          <section>
+            <p className="eyebrow">참가 조건 확인</p>
+            <h1 className="mt-4 text-title">몇 가지만 확인할게요</h1>
+            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+              이 인터뷰에 맞는 분인지 확인하기 위한 짧은 질문이에요. 각 문항에 하나씩 골라 주세요.
+            </p>
+
+            <div className="mt-6 space-y-4">
+              {screenerQs.map((q, qi) => (
+                <Card key={q.id} className="p-5">
+                  <fieldset>
+                    <legend className="text-base font-medium text-ink">
+                      {qi + 1}. {q.text}
+                    </legend>
+                    <div className="mt-3 space-y-2">
+                      {q.options.map((opt) => (
+                        <label
+                          key={opt}
+                          className={`flex cursor-pointer items-center gap-3 rounded-lg bg-bg p-3 ring-1 ${
+                            answers[q.id] === opt ? "ring-accent" : "ring-line"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={q.id}
+                            value={opt}
+                            checked={answers[q.id] === opt}
+                            onChange={() => pick(q.id, opt)}
+                            className="h-5 w-5 shrink-0 accent-[color:var(--accent-solid)]"
+                          />
+                          <span className="text-meta leading-relaxed text-ink">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                </Card>
+              ))}
+            </div>
+
+            {screenError && <p className="mt-3 text-meta text-nogo">{screenError}</p>}
+
+            <div className="mt-6 flex justify-center">
+              <Button
+                type="button"
+                size="lg"
+                onClick={submitScreener}
+                disabled={!allAnswered || screening}
+                className="w-full max-w-xs"
+              >
+                {screening ? "확인 중…" : "다음"}
+              </Button>
+            </div>
+            {!allAnswered && (
+              <p className="mt-2 text-center text-2xs text-ink-faint">
+                모든 질문에 답해 주시면 다음으로 넘어갈 수 있어요.
+              </p>
+            )}
+          </section>
+        ) : stage === "disqualified" ? (
+          /* F4.3 부적격 — 정중한 종료. 세션을 만들지 않았으므로 집계 모수에 들어가지 않는다. */
+          <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
+            <p className="text-3xl" aria-hidden>
+              🙏
+            </p>
+            <h1 className="mt-4 text-title">감사합니다</h1>
+            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+              참여해 주셔서 감사하지만, 이번 조사 대상에는 해당하지 않으세요.
+            </p>
+            <p className="mt-4 text-meta leading-relaxed text-ink-faint">
+              관심 가져주셔서 진심으로 감사드려요. 이제 창을 닫으셔도 좋아요.
+            </p>
           </section>
         ) : stage === "interview" && session ? (
           <section className="flex flex-1 flex-col">

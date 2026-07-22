@@ -50,6 +50,8 @@ class ProjectRow(Base):
     utilization: Mapped[str] = mapped_column(Text, default="")
     material_text: Mapped[str] = mapped_column(Text, default="")
     discord_webhook_url: Mapped[str] = mapped_column(Text, default="")
+    # 참가 조건 스크리너(F4.3) — 순서 있는 단일선택 문항 리스트. guides.questions 와 같은 판단으로 JSONB.
+    screener: Mapped[list] = mapped_column(JSONB, default=list)
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
