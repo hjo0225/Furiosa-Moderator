@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
+
+from pydantic import BaseModel
 
 from ..config import get_settings
+from ..prompts.research import RESEARCH_QUERY_SYSTEM, research_query_user
+from .llm_client import LLMError, get_llm
 
 log = logging.getLogger(__name__)
 
@@ -102,3 +107,33 @@ def crawl(urls: list[str]) -> dict[str, str]:
         if url and text:
             out[url] = text
     return out
+
+
+class SlotQuery(BaseModel):
+    angle: Literal["현상", "원인", "활용"]
+    queries: list[str]
+
+
+class ResearchQueries(BaseModel):
+    slots: list[SlotQuery]
+
+
+def research_queries(topic: str, target: str, motivation: str, utilization: str) -> dict[str, list[str]]:
+    """브리프 → 슬롯별 검색어 2개씩. LLM 실패 시 브리프 필드 폴백."""
+    try:
+        out, _ = get_llm().structured(
+            RESEARCH_QUERY_SYSTEM,
+            research_query_user(topic, target, motivation, utilization),
+            ResearchQueries, max_tokens=512,
+        )
+        d = {s.angle: [q for q in s.queries if q.strip()][:2] for s in out.slots}
+        if any(d.get(a) for a in ("현상", "원인", "활용")):
+            return {a: d.get(a, []) for a in ("현상", "원인", "활용")}
+    except LLMError as e:
+        log.warning("쿼리 생성 실패, 브리프 폴백 (%s)", e)
+
+    return {
+        "현상": [f"{topic} {target}".strip(), topic],
+        "원인": [f"{topic} 이유 원인", f"{target} {topic} 인식"],
+        "활용": [f"{utilization} 사례", f"{utilization} 트렌드"],
+    }
