@@ -11,9 +11,10 @@
 // (자동재생 권한 확보 + 아바타 진폭).
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { InterviewStimulus } from "@/components/interview-stimulus";
 import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
-import { sendTurn, submitSession, transcribeAudio } from "@/lib/api";
+import { sendTurn, submitSession, transcribeAudio, type Stimulus } from "@/lib/api";
 import { initialVoiceInput, reduceVoiceInput, type VoiceInputState } from "@/lib/voice-input";
 import { cn } from "@/lib/utils";
 
@@ -37,12 +38,14 @@ export function InterviewFlow({
   sessionId,
   locale = "ko",
   en = false,
+  stimulus,
   onComplete,
 }: {
   projectId: string;
   sessionId: string;
   locale?: string;
   en?: boolean;
+  stimulus?: Stimulus; // Phase 1: 항상 undefined. 주어지면 2분할로 렌더.
   onComplete: (answerCount: number) => void;
 }) {
   const tts = useTts(locale);
@@ -201,6 +204,10 @@ export function InterviewFlow({
   }
 
   // --- 인터뷰 화면 (센터 컬럼) ---------------------------------------------
+  const qaProps = {
+    en, busy, question, tts, phase, input, setInput, goNext,
+    toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error,
+  };
   return (
     <Card className="mx-auto w-full max-w-2xl overflow-hidden p-0">
       {/* 상단 — 진행률 (프로빙 미반영) */}
@@ -246,24 +253,21 @@ export function InterviewFlow({
               </>
             )}
           </div>
+        ) : stimulus ? (
+          // 자극물 모드 — 2분할(방향 3): 왼쪽 자극물, 오른쪽 질문+답변
+          <div className="grid flex-1 gap-5 md:grid-cols-[1.4fr_1fr]">
+            <div className="min-h-[16rem] md:min-h-0">
+              <InterviewStimulus stimulus={stimulus} />
+            </div>
+            <div className="flex min-h-0 flex-col md:border-l md:border-line md:pl-6">
+              <QuestionAndAnswer {...qaProps} />
+            </div>
+          </div>
         ) : (
-          <QuestionAndAnswer
-            en={en}
-            busy={busy}
-            question={question}
-            tts={tts}
-            phase={phase}
-            input={input}
-            setInput={setInput}
-            goNext={goNext}
-            toggleRecord={toggleRecord}
-            recorder={recorder}
-            voiceFilled={voiceFilled}
-            voiceInput={voiceInput}
-            canType={canType}
-            canNext={canNext}
-            error={error}
-          />
+          // 기본 — 센터 컬럼(방향 1)
+          <div className="mx-auto flex w-full max-w-xl flex-1 flex-col">
+            <QuestionAndAnswer {...qaProps} />
+          </div>
         )}
       </div>
     </Card>
