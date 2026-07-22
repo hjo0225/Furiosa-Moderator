@@ -23,3 +23,17 @@ def test_briefing_index_route_registered():
     import api.main as m
     paths = {r.path for r in m.app.routes if hasattr(r, "path")}
     assert "/api/projects/{pid}/briefing/index" in paths
+
+
+def test_chunks_with_angle_tags_and_sequences():
+    from api.briefing.pipeline import chunks_with_angle
+    from api.schemas.models import Material
+
+    mats = [
+        Material(source="web", angle="현상", title="A", text="문단1.\n\n문단2."),
+        Material(source="upload", angle="활용", title="B", text="문단3."),
+    ]
+    rows = chunks_with_angle(mats)
+    assert [r[2] for r in rows] == ["현상", "현상", "활용"]   # angle 태깅
+    assert [r[0] for r in rows] == [0, 1, 2]                  # seq 연속
+    assert rows[0][3] == "A"                                  # source = title
