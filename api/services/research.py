@@ -120,7 +120,12 @@ class ResearchQueries(BaseModel):
 
 
 def research_queries(topic: str, target: str, motivation: str, utilization: str) -> dict[str, list[str]]:
-    """브리프 → 슬롯별 검색어 2개씩. LLM 실패 시 브리프 필드 폴백."""
+    """브리프 → 슬롯별 검색어 2개씩. 빈 슬롯은 그 슬롯 폴백으로 채워 항상 3슬롯을 보장."""
+    fallback = {
+        "현상": [f"{topic} {target}".strip(), topic],
+        "원인": [f"{topic} 이유 원인", f"{target} {topic} 인식"],
+        "활용": [f"{utilization} 사례", f"{utilization} 트렌드"],
+    }
     try:
         out, _ = get_llm().structured(
             RESEARCH_QUERY_SYSTEM,
@@ -128,13 +133,7 @@ def research_queries(topic: str, target: str, motivation: str, utilization: str)
             ResearchQueries, max_tokens=512,
         )
         d = {s.angle: [q for q in s.queries if q.strip()][:2] for s in out.slots}
-        if any(d.get(a) for a in ("현상", "원인", "활용")):
-            return {a: d.get(a, []) for a in ("현상", "원인", "활용")}
+        return {a: (d.get(a) or fallback[a]) for a in ("현상", "원인", "활용")}
     except LLMError as e:
         log.warning("쿼리 생성 실패, 브리프 폴백 (%s)", e)
-
-    return {
-        "현상": [f"{topic} {target}".strip(), topic],
-        "원인": [f"{topic} 이유 원인", f"{target} {topic} 인식"],
-        "활용": [f"{utilization} 사례", f"{utilization} 트렌드"],
-    }
+    return fallback

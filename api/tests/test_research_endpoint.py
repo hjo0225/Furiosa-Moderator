@@ -24,3 +24,19 @@ def test_research_returns_candidates(monkeypatch):
     assert resp.status_code == 200
     c = resp.json()["candidates"][0]
     assert c["url"] == "http://a" and c["angle"] == "현상"
+
+
+def test_research_returns_502_on_research_error(monkeypatch):
+    monkeypatch.setattr(pm.store, "get_project", lambda pid: Project(id=pid, topic="t"))
+    monkeypatch.setattr(pm.research, "research_queries", lambda *a: {"현상": ["q"]})
+    def boom(sq):
+        raise research.ResearchError("apify down")
+    monkeypatch.setattr(pm.research, "search", boom)
+    resp = TestClient(main.app).post("/api/projects/p_1/research")
+    assert resp.status_code == 502
+
+
+def test_research_404_when_project_missing(monkeypatch):
+    monkeypatch.setattr(pm.store, "get_project", lambda pid: None)
+    resp = TestClient(main.app).post("/api/projects/nope/research")
+    assert resp.status_code == 404

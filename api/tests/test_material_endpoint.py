@@ -67,3 +67,14 @@ def test_upload_material_rejects_too_large(monkeypatch):
         data={"angle": "현상"},
     )
     assert resp.status_code == 400
+
+
+def test_upload_material_rejects_bad_angle(monkeypatch):
+    monkeypatch.setattr(store_mod, "get_project", lambda pid: Project(id=pid, topic="주제"))
+    client = TestClient(main.app)
+    resp = client.post(
+        "/api/projects/p_1/material",
+        files={"file": ("brief.txt", "본문".encode("utf-8"), "text/plain")},
+        data={"angle": "엉뚱"},
+    )
+    assert resp.status_code == 400

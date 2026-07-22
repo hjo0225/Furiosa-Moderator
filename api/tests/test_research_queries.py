@@ -31,3 +31,18 @@ def test_research_queries_falls_back_on_llm_error(monkeypatch):
     d = research.research_queries("금주", "2030", "광고", "신제품")
     assert set(d) == {"현상", "원인", "활용"}
     assert all(len(v) == 2 for v in d.values())        # 폴백도 슬롯당 2개
+
+
+def test_research_queries_fills_missing_slot_from_fallback(monkeypatch):
+    fake = research.ResearchQueries(slots=[
+        research.SlotQuery(angle="현상", queries=["a", "b"]),
+    ])  # 원인·활용 누락
+
+    class FakeLLM:
+        def structured(self, s, u, schema, **k):
+            return fake, None
+
+    monkeypatch.setattr(research, "get_llm", lambda: FakeLLM())
+    d = research.research_queries("금주", "2030", "광고", "신제품")
+    assert d["현상"] == ["a", "b"]              # LLM 값 유지
+    assert len(d["원인"]) == 2 and len(d["활용"]) == 2   # 빈 슬롯은 폴백으로 채움
