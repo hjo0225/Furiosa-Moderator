@@ -58,7 +58,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
     <>
       <InAppBridge />
       <main
-        className={`mx-auto min-h-screen w-full px-4 py-8 sm:px-6 sm:py-14 ${
+        className={`mx-auto flex min-h-screen w-full flex-col px-4 py-8 sm:px-6 sm:py-14 ${
           stage === "interview" ? "max-w-3xl" : "max-w-xl"
         }`}
       >
@@ -140,7 +140,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
               size="lg"
               onClick={begin}
               disabled={!agreed || starting}
-              className="mt-6 w-full sm:w-auto"
+              className="mt-6 w-full"
             >
               {starting ? "준비 중…" : "동의하고 인터뷰 시작"}
             </Button>
@@ -151,7 +151,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
             )}
           </section>
         ) : stage === "interview" && session ? (
-          <section>
+          <section className="flex flex-1 flex-col">
             <InterviewFlow
               projectId={projectId}
               sessionId={session.id}
