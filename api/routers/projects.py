@@ -408,6 +408,8 @@ def build_insight(pid: str) -> Insight:
     )
     for t in insight.themes:
         t.mention_count = mentions.get(t.theme, 0)
+    # 문항별 응답 버킷 분포도 DB 실측으로 채운다(F6.4) — sentiment 와 같은 계약 1.
+    insight.bucket_distribution = store.bucket_distribution(pid)
     insight.session_count = len(summaries)
     return store.save_insight(pid, insight)
 

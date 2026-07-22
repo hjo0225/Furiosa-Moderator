@@ -185,9 +185,24 @@ class Turn(BaseModel):
     emotion_confidence: float = 0.0
     is_probe: bool = False       # 꼬리질문 여부
     question_id: str = ""        # 대응하는 guide question
+    # F6.1 응답 버킷 분류 — 이 답변을 문항 코드북(response_buckets) 중 하나에 귀속.
+    # LLM 은 '어느 버킷'만 고른다. 버킷별 N(분포)은 DB 실측이 센다(계약 1) — store.bucket_distribution.
+    bucket_id: str = ""
+    bucket_confidence: float = 0.0
+    bucket_evidence: str = ""    # 그 분류의 근거가 된 답변 속 짧은 인용(원문)
     pii_types: list[str] = Field(default_factory=list)  # 무엇이 마스킹됐는지(원문 아님)
     guardrail_rewritten: bool = False
     created_at: datetime = Field(default_factory=_now)
+
+
+class BucketAssignment(BaseModel):
+    """응답 버킷 분류 결과 (F6.1) — LLM 구조화 출력.
+
+    분류만 한다: 어느 버킷(bucket_id)인지 + 확신도 + 근거 인용. '개수 세기'는 하지 않는다.
+    """
+    bucket_id: str
+    confidence: float = 0.0
+    evidence: str = ""
 
 
 class TurnIn(BaseModel):
@@ -225,5 +240,8 @@ class Insight(BaseModel):
     overall: str = ""
     themes: list[ThemeInsight] = Field(default_factory=list)
     sentiment: dict[str, int] = Field(default_factory=dict)
+    # 문항별 응답 버킷 분포(F6.4) — {question_id: {bucket_id: N}}. sentiment 와 똑같이
+    # LLM 이 아니라 DB 실측으로 채운다(계약 1). LLM 은 개별 답변을 버킷으로 '분류'만 한다.
+    bucket_distribution: dict = Field(default_factory=dict)
     session_count: int = 0
     generated_at: datetime = Field(default_factory=_now)

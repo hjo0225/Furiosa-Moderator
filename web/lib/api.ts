@@ -105,6 +105,9 @@ export type Insight = {
   overall: string;
   themes: ThemeInsight[];
   sentiment: Record<string, number>;
+  // 문항별 응답 버킷 분포(F6.4) — { question_id: { bucket_id: 응답자 수 } }.
+  // sentiment 와 같이 DB 실측(LLM 이 세지 않음). bucket_id → 라벨은 가이드의 response_buckets 로 매핑.
+  bucket_distribution: Record<string, Record<string, number>>;
   session_count: number;
   generated_at: string;
 };

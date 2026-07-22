@@ -65,6 +65,8 @@ def _turn(r: TurnRow) -> Turn:
         emotion_confidence=r.emotion_confidence, is_probe=r.is_probe,
         question_id=r.question_id, pii_types=list(r.pii_types or []),
         guardrail_rewritten=r.guardrail_rewritten, created_at=r.created_at,
+        bucket_id=r.bucket_id, bucket_confidence=r.bucket_confidence,
+        bucket_evidence=r.bucket_evidence,
     )
 
 
@@ -314,6 +316,8 @@ def add_turn(pid: str, sid: str, t: Turn) -> Turn:
             emotion_confidence=t.emotion_confidence, is_probe=t.is_probe,
             question_id=t.question_id, pii_types=list(t.pii_types),
             guardrail_rewritten=t.guardrail_rewritten, created_at=t.created_at,
+            bucket_id=t.bucket_id, bucket_confidence=t.bucket_confidence,
+            bucket_evidence=t.bucket_evidence,
         ))
         s.commit()
     return t
@@ -362,6 +366,47 @@ def sentiment_counts(pid: str) -> dict[str, int]:
         non_neutral = {k: v for k, v in counts.items() if k != "중립"}
         label = max(non_neutral or counts, key=lambda k: (non_neutral or counts)[k])
         out[label] = out.get(label, 0) + 1
+    return out
+
+
+def bucket_distribution(pid: str) -> dict[str, dict[str, int]]:
+    """완료 세션의 **문항별 응답 버킷 분포**를 DB 에서 직접 센다(F6.4).
+
+    sentiment_counts 와 같은 원칙(계약 1): LLM 은 답변을 버킷으로 '분류'만 하고(turns.bucket_id),
+    버킷별 N 은 여기서 group-by 로 센다. 반환은 {question_id: {bucket_id: 응답자 수}}.
+
+    한 응답자가 한 문항에 여러 번 답할 수 있어(probe 꼬리질문) (세션·문항)당 1표로 집계한다 —
+    턴 수로 세면 말 많은 응답자가 분포를 지배한다(sentiment_counts 가 세션당 1표를 쓰는 이유와 같다).
+    같은 문항에서 버킷이 갈리면 confidence 최고값을 그 응답자의 대표 버킷으로 채택한다.
+    """
+    with db_session() as s:
+        rows = s.execute(
+            select(
+                SessionRow.id, TurnRow.question_id, TurnRow.bucket_id,
+                func.max(TurnRow.bucket_confidence),
+            )
+            .join(TurnRow, TurnRow.session_id == SessionRow.id)
+            .where(
+                SessionRow.project_id == pid,
+                SessionRow.status == "completed",
+                TurnRow.role == "respondent",
+                TurnRow.bucket_id != "",
+            )
+            .group_by(SessionRow.id, TurnRow.question_id, TurnRow.bucket_id)
+        ).all()
+
+    # (세션, 문항)당 confidence 최고 버킷 하나만 대표로 남긴다
+    best: dict[tuple[str, str], tuple[float, str]] = {}
+    for sid, qid, bucket_id, conf in rows:
+        key = (sid, qid)
+        cur = best.get(key)
+        if cur is None or (conf or 0.0) > cur[0]:
+            best[key] = (conf or 0.0, bucket_id)
+
+    out: dict[str, dict[str, int]] = {}
+    for (_sid, qid), (_conf, bucket_id) in best.items():
+        per_q = out.setdefault(qid, {})
+        per_q[bucket_id] = per_q.get(bucket_id, 0) + 1
     return out
 
 
@@ -441,10 +486,12 @@ def save_insight(pid: str, i: Insight) -> Insight:
         themes = [t.model_dump() for t in i.themes]
         if r:
             r.overall, r.themes, r.sentiment = i.overall, themes, i.sentiment
+            r.bucket_distribution = i.bucket_distribution
             r.session_count, r.generated_at = i.session_count, i.generated_at
         else:
             s.add(InsightRow(
                 project_id=pid, overall=i.overall, themes=themes, sentiment=i.sentiment,
+                bucket_distribution=i.bucket_distribution,
                 session_count=i.session_count, generated_at=i.generated_at,
             ))
         s.commit()
@@ -459,7 +506,9 @@ def get_insight(pid: str) -> Insight | None:
         return Insight(
             project_id=r.project_id, overall=r.overall,
             themes=[ThemeInsight(**t) for t in (r.themes or [])],
-            sentiment=dict(r.sentiment or {}), session_count=r.session_count,
+            sentiment=dict(r.sentiment or {}),
+            bucket_distribution=dict(r.bucket_distribution or {}),
+            session_count=r.session_count,
             generated_at=r.generated_at,
         )
 

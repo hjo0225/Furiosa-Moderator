@@ -52,6 +52,48 @@ def insight_user(topic: str, summaries: list[str]) -> str:
     )
 
 
+# --- 응답 버킷 분류 (F6.1) ----------------------------------------------------
+
+# 개별 답변 하나를 그 문항의 코드북(response_buckets) 중 정확히 하나로 귀속시킨다.
+# 여기서 '세지'는 않는다 — 버킷별 N(분포)은 DB 실측(store.bucket_distribution)이 센다(계약 1).
+BUCKET_CLASSIFY_SYSTEM = (
+    "당신은 정성조사 응답 분류기입니다. 응답자의 답변을 주어진 버킷(코드북) 중 "
+    "하나만 고르세요 — 여러 개를 고르거나 새 버킷을 만들지 않습니다.\n"
+    "규칙:\n"
+    "- bucket_id 는 아래 제시된 버킷 id 중 하나여야 합니다. 목록에 없는 id 를 지어내지 마세요.\n"
+    "- 어느 버킷에도 뚜렷이 맞지 않으면 '기타/캐치올' 버킷을 고르세요.\n"
+    "- confidence 는 0.0~1.0. 근거가 약하거나 애매하면 낮게 주세요.\n"
+    "- evidence 는 그렇게 분류한 근거가 되는 답변 속 짧은 인용입니다(원문 그대로). "
+    "답변에 없는 말을 지어내지 마세요.\n"
+    "- 당신은 '분류'만 합니다. 버킷별 개수는 서버가 셉니다(당신이 세지 않습니다)."
+)
+
+
+def bucket_classify_user(question_text: str, goal: str, buckets: list, answer: str) -> str:
+    """분류 대상 문항·버킷 목록·답변을 제시. buckets 는 가이드의 response_buckets(dict 리스트)."""
+    lines = []
+    for b in buckets:
+        bid = b.get("id", "")
+        label = b.get("label", "")
+        definition = b.get("definition", "")
+        tags = []
+        if b.get("is_catchall"):
+            tags.append("기타/캐치올")
+        if b.get("is_negative_case"):
+            tags.append("부정형")
+        tag = f" [{' · '.join(tags)}]" if tags else ""
+        lines.append(f"- {bid}: {label}{tag}" + (f" — {definition}" if definition else ""))
+    block = "\n".join(lines) or "(버킷 없음)"
+    return (
+        f"[문항]\n{question_text}\n\n"
+        f"[이 문항으로 알아내려는 것]\n{goal or '(미기재)'}\n\n"
+        f"[버킷 목록 — 이 중 하나의 id 를 고르세요]\n{block}\n\n"
+        f"[응답자 답변]\n{answer}\n\n"
+        "위 답변을 가장 잘 나타내는 버킷 하나의 id 를 bucket_id 에 넣고, "
+        "confidence 와 근거 인용(evidence)을 채우세요."
+    )
+
+
 # --- 감정 태깅 (M-3) ----------------------------------------------------------
 
 EMOTION_SYSTEM = (
