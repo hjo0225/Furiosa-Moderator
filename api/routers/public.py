@@ -13,7 +13,16 @@ from fastapi.responses import StreamingResponse
 
 from ..config import get_settings
 from ..interview import engine as graph_engine
-from ..schemas.models import ConsentLog, ScreenIn, Session, SessionStartIn, TurnIn, TurnOut
+from ..schemas.models import (
+    ConsentLog,
+    InterviewGuide,
+    ScreenIn,
+    Session,
+    SessionStartIn,
+    Stimulus,
+    TurnIn,
+    TurnOut,
+)
 from ..services import moderator, notify, store
 from ..services.llm_client import LLMError
 
@@ -41,6 +50,21 @@ def _public_screener(screener: list) -> list[dict]:
     id·text·options 만 준다.
     """
     return [{"id": q.id, "text": q.text, "options": list(q.options or [])} for q in screener]
+
+
+def _question_stimulus(guide: InterviewGuide, qid: str) -> Stimulus | None:
+    """진행자가 지금 다루는 가이드 문항에 붙은 제시 자료(있으면 그것, 없으면 None) — 순수 함수.
+
+    url 이 빈 자극물은 '없음'으로 친다: 의뢰자가 캡션만 남기고 URL 을 비운 채 저장하면
+    응답자 화면에 빈 액자가 뜨는데, 그럴 바엔 기본 단일 컬럼으로 두는 게 낫다.
+    문항은 JSONB 라 마이그레이션 없이 stimulus 를 얹어 여기서 꺼낸다.
+    """
+    if not qid:
+        return None
+    q = next((q for q in guide.questions if q.id == qid), None)
+    if not q or not q.stimulus or not (q.stimulus.url or "").strip():
+        return None
+    return q.stimulus
 
 
 @router.get("/{pid}")
@@ -120,6 +144,9 @@ def turn(pid: str, sid: str, body: TurnIn) -> TurnOut:
         is_probe=mod_turn.is_probe,
         guardrail_rewritten=mod_turn.guardrail_rewritten,
         emotion="",
+        # 이번 발화가 다루는 문항의 제시 자료를 함께 내려 응답자 화면이 2분할로 렌더한다.
+        # 두 엔진 모두 mod_turn.question_id 를 채우므로 엔진 분기 없이 한 번만 조회한다.
+        stimulus=_question_stimulus(guide, mod_turn.question_id),
     )
 
 
@@ -140,17 +167,27 @@ def turn_stream(pid: str, sid: str, body: TurnIn):
     def _sse(event: dict) -> str:
         return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
+    def _stim_dump(stim: Stimulus | None) -> dict | None:
+        return stim.model_dump() if stim else None
+
     def gen():
         try:
             if use_graph:
+                # 그래프 엔진의 meta 는 내부 핸드오프로 question_id 를 실어 준다 — 여기서 뽑아
+                # stimulus 로 바꿔치우고 question_id 자체는 벗겨 낸다(비스트림 TurnOut 처럼 미노출).
                 for event in graph_engine.stream_turn(pid, session, guide, body.text, body.lang):
+                    meta = event.get("meta") if isinstance(event, dict) else None
+                    if isinstance(meta, dict):
+                        qid = meta.pop("question_id", "")
+                        meta["stimulus"] = _stim_dump(_question_stimulus(guide, qid))
                     yield _sse(event)
             else:
                 message, done, _, mod_turn = moderator.next_turn(pid, session, guide, body.text, body.lang)
                 yield _sse({"token": message})
                 yield _sse({"meta": {"message": message, "done": done, "asked": session.asked,
                                      "is_probe": mod_turn.is_probe,
-                                     "guardrail_rewritten": mod_turn.guardrail_rewritten}})
+                                     "guardrail_rewritten": mod_turn.guardrail_rewritten,
+                                     "stimulus": _stim_dump(_question_stimulus(guide, mod_turn.question_id))}})
         except LLMError as e:
             yield _sse({"error": f"인터뷰 진행에 실패했습니다: {e}"})
 

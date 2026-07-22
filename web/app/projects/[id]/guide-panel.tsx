@@ -17,6 +17,7 @@ import {
   type Project,
   type ResponseBucket,
   type ScreenerQuestion,
+  type Stimulus,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -169,6 +170,20 @@ export function GuidePanel({
     patch((g) => ({
       ...g,
       questions: g.questions.filter((_, i) => i !== idx).map((q, i) => ({ ...q, order: i })),
+    }));
+  }
+
+  // 제시 자료(선택) — 문항 하나에 이미지/영상 URL+캡션을 붙인다. URL 을 비우면 자료 자체를 해제한다
+  // (빈 액자를 응답자에게 띄우지 않으려는 것 — 백엔드도 빈 URL 을 걸러낸다).
+  function setStimulusField(qi: number, field: keyof Stimulus, value: string) {
+    patch((g) => ({
+      ...g,
+      questions: g.questions.map((q, i) => {
+        if (i !== qi) return q;
+        const cur: Stimulus = q.stimulus ?? { type: "image", url: "", caption: "" };
+        const next: Stimulus = { ...cur, [field]: value };
+        return { ...q, stimulus: field === "url" && !value.trim() ? undefined : next };
+      }),
     }));
   }
 
@@ -466,6 +481,51 @@ export function GuidePanel({
                     <Button size="sm" variant="ghost" className="mt-1.5" onClick={() => addBucket(i)}>
                       + 버킷 추가
                     </Button>
+                  </div>
+
+                  {/* 자극물(선택) — 이 문항을 다룰 때 응답자 화면에 함께 띄울 이미지/영상 */}
+                  <div className="mt-2 rounded-lg bg-surface p-3 ring-1 ring-line">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-2xs font-medium uppercase tracking-wide text-ink-faint">
+                        자극물 (선택)
+                      </p>
+                      <div className="flex items-center gap-1">
+                        {(["image", "video"] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setStimulusField(i, "type", t)}
+                            className={cn(
+                              "rounded px-2 py-0.5 text-2xs ring-1 transition-colors",
+                              (q.stimulus?.type ?? "image") === t
+                                ? "bg-accent-wash text-accent ring-accent/30"
+                                : "text-ink-faint ring-line hover:bg-accent-wash",
+                            )}
+                          >
+                            {t === "image" ? "이미지" : "영상"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <input
+                      value={q.stimulus?.url ?? ""}
+                      onChange={(e) => setStimulusField(i, "url", e.target.value)}
+                      placeholder={
+                        (q.stimulus?.type ?? "image") === "video"
+                          ? "영상 URL (비우면 해제)"
+                          : "이미지 URL (비우면 해제)"
+                      }
+                      className={cn(inputCls, "text-meta")}
+                    />
+                    <input
+                      value={q.stimulus?.caption ?? ""}
+                      onChange={(e) => setStimulusField(i, "caption", e.target.value)}
+                      placeholder="설명 캡션 (선택)"
+                      className={cn(inputCls, "text-meta mt-1.5")}
+                    />
+                    <p className="mt-1.5 text-2xs text-ink-faint">
+                      이 문항을 물을 때 응답자 화면에 함께 보여줄 이미지·영상이에요. 비워두면 표시하지 않아요.
+                    </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">

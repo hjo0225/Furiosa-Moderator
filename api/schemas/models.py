@@ -69,12 +69,26 @@ class ResponseBucket(BaseModel):
     is_negative_case: bool = False    # '불편 없음' 류 (F2.3.4)
 
 
+class Stimulus(BaseModel):
+    """질문에 붙는 제시 자료(시안·광고·컨셉) — 이미지/영상 (PRD v2.0 자극물).
+
+    url 이 빈 자극물은 '없음'과 같다 — 의뢰자가 캡션만 남기고 URL 을 비운 채 저장한 경우
+    응답자에게 빈 액자를 띄우지 않도록 라우터가 걸러 내려보내지 않는다(public._question_stimulus).
+    가이드 문항에 얹히므로 별도 테이블·마이그레이션 없이 guides.questions(JSONB)에 함께 저장된다.
+    """
+    type: Literal["image", "video"] = "image"
+    url: str = ""
+    caption: str = ""
+
+
 class GuideQuestion(BaseModel):
     id: str
     text: str
     goal: str = ""          # 이 문항으로 알아내려는 것 (M-1 커버리지 판정에 쓰인다)
     order: int = 0
     response_buckets: list[ResponseBucket] = Field(default_factory=list)
+    # 이 문항을 다룰 때 응답자 화면에 함께 띄울 제시 자료(선택). 없으면 None — 기본 단일 컬럼.
+    stimulus: Stimulus | None = None
 
 
 class InterviewGuide(BaseModel):
@@ -252,6 +266,8 @@ class TurnOut(BaseModel):
     is_probe: bool = False
     guardrail_rewritten: bool = False
     emotion: str = ""
+    # 이번 진행자 발화가 다루는 문항의 제시 자료(있으면). url 이 빈 것은 서버가 None 으로 거른다.
+    stimulus: Stimulus | None = None
 
 
 # --- 집계 -------------------------------------------------------------------
