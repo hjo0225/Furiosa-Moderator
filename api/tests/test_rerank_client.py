@@ -96,3 +96,36 @@ def test_rerank_raises_llm_error_when_raise_for_status_fails(monkeypatch):
     cli = _client()
     with pytest.raises(LLMError):
         cli.rerank("q", ["a"], top_n=3)
+
+
+def test_rerank_raises_llm_error_on_missing_results_key(monkeypatch):
+    """200 이지만 본문에 'results' 키가 없으면 KeyError 가 아니라 LLMError 로 변환된다
+    (호출자의 except LLMError 코사인 폴백이 먹도록 — 본문 파싱을 try/except 로 감쌌다)."""
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": []}   # 'results' 키 없음
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp())
+
+    cli = _client()
+    with pytest.raises(LLMError):
+        cli.rerank("q", ["a"], top_n=3)
+
+
+def test_rerank_raises_llm_error_on_malformed_item(monkeypatch):
+    """results 항목에 index/relevance_score 키가 빠져도 KeyError 가 아니라 LLMError 로."""
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"results": [{"index": 0}]}   # relevance_score 없음
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp())
+
+    cli = _client()
+    with pytest.raises(LLMError):
+        cli.rerank("q", ["a"], top_n=3)

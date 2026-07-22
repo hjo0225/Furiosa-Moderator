@@ -246,3 +246,24 @@ def test_search_chunks_small_candidate_set_skips_rerank(monkeypatch):
     assert [r["text"] for r in out] == ["A", "B"]             # 코사인 순서 그대로 반환
     assert out[0]["score"] == pytest.approx(0.90)             # 코사인 점수 유지
     assert fake.calls == []                                   # 리랭커 호출 자체가 없다
+
+
+def test_search_chunks_drops_out_of_range_and_clamps_to_k(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [                                        # 후보 4개(> k) → 리랭커 경로 진입
+        (_Chunk("A", "sA"), 0.10),
+        (_Chunk("B", "sB"), 0.20),
+        (_Chunk("C", "sC"), 0.30),
+        (_Chunk("D", "sD"), 0.40),
+    ]
+    # 리랭커가 범위 밖 index(99)와 k 초과 개수를 돌려줘도: 범위 밖은 버리고 k 로 클램프
+    fake = _FakeLLM(ranked=[(0, 0.9), (99, 0.8), (1, 0.7), (0, 0.6)])
+    _wire(monkeypatch, pairs, fake)
+
+    out = pipeline.search_chunks("p1", "q", k=2)
+
+    assert len(out) <= 2                                       # k 로 클램프
+    assert all(isinstance(r, dict) and "text" in r for r in out)   # 유효 dict 만(범위 밖 제거)
+    assert [r["text"] for r in out] == ["A", "B"]             # 99 스킵 → 상위 k=2(0→A, 1→B)
+    assert [r["score"] for r in out] == [0.9, 0.7]

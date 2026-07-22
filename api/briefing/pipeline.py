@@ -97,7 +97,7 @@ def search_chunks(pid: str, query: str, k: int = 3, *,
     except LLMError as e:  # 리랭커 장애가 검색을 죽이지 않게 — 코사인 순서로 폴백
         log.warning("리랭크 실패, 코사인 순서로 폴백 (project=%s): %s", pid, e)
         return cands[:k]
-    return [{**cands[i], "score": score} for i, score in ranked]
+    return [{**cands[i], "score": score} for i, score in ranked if 0 <= i < len(cands)][:k]
 
 
 def search_knowledge(query: str, corpus: str | None = None, k: int = 5, *,
@@ -132,7 +132,7 @@ def search_knowledge(query: str, corpus: str | None = None, k: int = 5, *,
     except LLMError as e:  # 리랭커 장애가 검색을 죽이지 않게 — 코사인 순서로 폴백
         log.warning("리랭크 실패, 코사인 순서로 폴백 (corpus=%s): %s", corpus, e)
         return cands[:k]
-    return [{**cands[i], "score": score} for i, score in ranked]
+    return [{**cands[i], "score": score} for i, score in ranked if 0 <= i < len(cands)][:k]
 
 
 def refresh_project(pid: str) -> None:

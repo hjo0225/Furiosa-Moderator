@@ -193,11 +193,12 @@ class LLMClient:
                 time.sleep(0.5 * (attempt + 1))
         else:
             raise LLMError(f"리랭크 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
-        results = resp.json()["results"]
-        return sorted(
-            ((item["index"], item["relevance_score"]) for item in results),
-            key=lambda t: t[1], reverse=True,
-        )
+        try:
+            results = resp.json()["results"]
+            parsed = [(item["index"], item["relevance_score"]) for item in results]
+        except (KeyError, ValueError, TypeError) as e:
+            raise LLMError(f"리랭크 응답 파싱 실패: {e}") from e
+        return sorted(parsed, key=lambda t: t[1], reverse=True)
 
     # --- 텍스트 --------------------------------------------------------------
 

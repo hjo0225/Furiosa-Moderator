@@ -230,6 +230,27 @@ def test_search_knowledge_meta_filters_add_where(monkeypatch):
     assert params.get("meta_2") == "sex" and params.get("param_2") == "F"
 
 
+def test_search_knowledge_drops_out_of_range_and_clamps_to_k(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [                                        # 후보 4개(> k) → 리랭커 경로 진입
+        (_KChunk("A"), 0.10),
+        (_KChunk("B"), 0.20),
+        (_KChunk("C"), 0.30),
+        (_KChunk("D"), 0.40),
+    ]
+    # 리랭커가 범위 밖 index(99)와 k 초과 개수를 돌려줘도: 범위 밖은 버리고 k 로 클램프
+    fake = _FakeLLM(ranked=[(0, 0.9), (99, 0.8), (1, 0.7), (0, 0.6)])
+    _wire(monkeypatch, pairs, fake)
+
+    out = pipeline.search_knowledge("q", k=2)
+
+    assert len(out) <= 2                                       # k 로 클램프
+    assert all(isinstance(r, dict) and "text" in r for r in out)   # 유효 dict 만(범위 밖 제거)
+    assert [r["text"] for r in out] == ["A", "B"]             # 99 스킵 → 상위 k=2
+    assert [r["score"] for r in out] == [0.9, 0.7]
+
+
 # --- rows_from_df (ingest CLI 순수 변환부) ------------------------------------
 
 def test_rows_from_df_concatenates_skips_blanks_and_extracts_meta():
@@ -291,3 +312,86 @@ def test_main_ingests_rows_with_embeddings(monkeypatch):
     assert {row.corpus for row in fake.added} == {"personas"}
     assert fake.added[0].meta == {"age": 30}                   # meta 함께 저장
     assert fake.added[0].id.startswith("k_")                   # new_id("k_")
+
+
+def test_main_replace_deletes_corpus_before_insert(monkeypatch):
+    """--replace 면 insert 전에 해당 corpus 대상 delete 문이 먼저 실행된다(멱등 재적재)."""
+    import pandas as pd
+
+    ing = _load(_SCRIPTS / "ingest_knowledge.py")
+    df = pd.DataFrame([{"persona": "페르소나1", "age": 30}])
+    monkeypatch.setattr("pandas.read_parquet", lambda path: df)
+    monkeypatch.setattr("api.services.embeddings.embed_texts",
+                        lambda texts: [[0.0, 0.0, 0.0, 0.0] for _ in texts])
+
+    events = []   # (종류, 인자) 시간순 로그 — delete 가 insert 보다 먼저인지 검증
+
+    class _S:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, stmt):
+            events.append(("execute", stmt))
+
+        def add(self, row):
+            events.append(("add", row))
+
+        def commit(self):
+            events.append(("commit", None))
+
+    monkeypatch.setattr("api.services.db.db_session", lambda: _S())
+
+    ing.main(["--parquet", "x.parquet", "--corpus", "personas",
+              "--text-cols", "persona", "--meta-cols", "age", "--replace"])
+
+    kinds = [e[0] for e in events]
+    assert "execute" in kinds and "add" in kinds
+    assert kinds.index("execute") < kinds.index("add")         # delete 가 insert 보다 먼저
+    delete_stmt = events[kinds.index("execute")][1]
+    compiled = delete_stmt.compile()
+    assert "DELETE FROM knowledge_chunks" in str(compiled)     # DELETE 문
+    assert compiled.params.get("corpus_1") == "personas"       # 해당 corpus 대상
+
+
+def test_main_without_replace_issues_no_delete(monkeypatch):
+    """플래그 없으면(기본) delete 없이 append — 기존 동작 불변 회귀."""
+    import pandas as pd
+
+    ing = _load(_SCRIPTS / "ingest_knowledge.py")
+    df = pd.DataFrame([{"persona": "페르소나1", "age": 30}])
+    monkeypatch.setattr("pandas.read_parquet", lambda path: df)
+    monkeypatch.setattr("api.services.embeddings.embed_texts",
+                        lambda texts: [[0.0, 0.0, 0.0, 0.0] for _ in texts])
+
+    executed = []
+
+    class _S:
+        def __init__(self):
+            self.added = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, stmt):
+            executed.append(stmt)
+
+        def add(self, row):
+            self.added.append(row)
+
+        def commit(self):
+            pass
+
+    fake = _S()
+    monkeypatch.setattr("api.services.db.db_session", lambda: fake)
+
+    ing.main(["--parquet", "x.parquet", "--corpus", "personas",
+              "--text-cols", "persona", "--meta-cols", "age"])
+
+    assert executed == []                                      # delete 없음(append 동작 유지)
+    assert len(fake.added) == 1

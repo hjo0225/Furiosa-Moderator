@@ -183,6 +183,8 @@ def _collect_evidence(pid: str, p) -> str:
     안 되므로(레포 관례) 각 검색을 try/except 로 감싸 실패 슬롯은 건너뛴다.
     search_chunks 는 순환 임포트 회피로 로컬 임포트.
     """
+    if not store.list_materials(pid):   # 자료 없으면 임베딩 호출 없이 빠진다(불필요 네트워크 방지)
+        return ""
     from ..briefing.pipeline import search_chunks
 
     queries: list[tuple[str, str]] = [

@@ -61,6 +61,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--meta-cols", default="")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--batch", type=int, default=32)
+    p.add_argument("--replace", action="store_true",
+                   help="적재 전 해당 corpus 의 기존 행을 지운다(멱등 재적재)")
     args = p.parse_args(argv)
 
     import pandas as pd
@@ -76,6 +78,12 @@ def main(argv: list[str] | None = None) -> None:
                         meta_cols=_split(args.meta_cols), title_col=args.title_col)
     rows = [r for r in rows if r["text"]]     # 본문 없는 행은 버린다(임베딩 낭비 방지)
     print(f"{len(rows)} rows to ingest (corpus={args.corpus})")
+
+    if args.replace:                          # 멱등 재적재 — 기존 코퍼스 행을 먼저 지운다(자체 커밋 트랜잭션)
+        from sqlalchemy import delete
+        with db_session() as s:
+            s.execute(delete(KnowledgeChunkRow).where(KnowledgeChunkRow.corpus == args.corpus))
+            s.commit()
 
     inserted = 0
     with db_session() as s:

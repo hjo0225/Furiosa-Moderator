@@ -23,6 +23,7 @@ def _wire(monkeypatch, summaries):
     monkeypatch.setattr(pm.store, "get_project", lambda pid: Project(id=pid, topic="주제"))
     monkeypatch.setattr(pm.store, "get_slot_summaries", lambda pid: summaries)
     monkeypatch.setattr(pm.store, "save_guide", lambda pid, g: g)
+    monkeypatch.setattr(pm.store, "list_materials", lambda pid: [])  # 자료 없음 → 근거 검색 스킵(I-1)
     return llm
 
 
