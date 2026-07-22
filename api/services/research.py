@@ -67,6 +67,7 @@ def search(slot_queries: dict[str, list[str]]) -> list[Candidate]:
         "languageCode": "ko",
     })
 
+    # maxPagesPerQuery=1 -> 쿼리(term)당 item 1개. 페이지 상향 시 2쪽부터의 결과가 유실되므로 그때 재검토.
     by_term: dict[str, dict] = {}
     for i, item in enumerate(items):
         term = (item.get("searchQuery") or {}).get("term") or (ordered[i] if i < len(ordered) else "")

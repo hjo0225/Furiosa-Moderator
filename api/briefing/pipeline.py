@@ -92,7 +92,10 @@ def refresh_project(pid: str) -> None:
     from ..services.material import summarize_slot
     from ..services.store import list_materials, save_slot_summary
 
-    index_project(pid)
+    try:
+        index_project(pid)
+    except Exception as e:  # noqa: BLE001 — 임베딩 일시 장애가 수집을 죽이지 않게(다음 refresh 가 따라잡음)
+        log.warning("인덱싱 실패, 다음 refresh 로 미룸 (project=%s): %s", pid, e)
     by_angle: dict[str, list[str]] = {}
     for m in list_materials(pid):
         by_angle.setdefault(m.angle, []).append(m.text)

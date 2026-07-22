@@ -5,6 +5,9 @@
 *.pem
 pw.txt
 
+# Apify token file (APIFY_TOKEN_FILE)
+apify*.txt
+
 # 파이썬
 .venv/
 __pycache__/
