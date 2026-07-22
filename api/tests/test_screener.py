@@ -75,7 +75,7 @@ def test_store_project_maps_screener():
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
         motivation="", utilization="", material_text="", discord_webhook_url="",
         screener=[{"id": "s1", "text": "q", "options": ["a", "b"], "pass_options": ["a"]}],
-        status="draft", created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
+        blocklist=[], status="draft", created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
     p = store._project(row, 0, 0)
     assert p.screener == [ScreenerQuestion(id="s1", text="q", options=["a", "b"], pass_options=["a"])]
@@ -87,7 +87,7 @@ def test_store_project_maps_screener_empty():
     row = SimpleNamespace(
         id="p_1", owner="anonymous", title="t", topic="주제", target="",
         motivation="", utilization="", material_text="", discord_webhook_url="",
-        screener=None, status="draft", created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
+        screener=None, blocklist=None, status="draft", created_at=datetime(2026, 7, 21, tzinfo=timezone.utc),
     )
     assert store._project(row, 0, 0).screener == []
 

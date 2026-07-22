@@ -1,6 +1,7 @@
 """generate — 행동별 질문 생성 콜 (T3 콜 분리). T4 에서 stream_text 로 전환될 경로."""
 from __future__ import annotations
 
+from ...services import store
 from ...services.llm_client import get_llm
 from ..prompts import generate_user, interview_moderator_system, opening_user
 from ..state import InterviewState
@@ -19,6 +20,9 @@ def generate(state: InterviewState) -> dict:
     # 도구 (T0 폴백: 발동은 구조화 출력·결정론 규칙이 정한다 — 자율 tool choice 없음)
     terms = state.get("analysis", {}).get("unknown_terms", [])
     notes = brief.lookup(state["project_id"], terms) if terms else []
+    # 지식팩 금칙어(F1.5) — 진행자가 먼저 꺼내면 안 되는 주제. 프로젝트가 없거나 비면 제약 없음.
+    proj = store.get_project(state["project_id"])
+    blocklist = (proj.blocklist if proj else None) or []
     msg, _ = get_llm().text(
         interview_moderator_system(lang),
         generate_user(
@@ -27,6 +31,7 @@ def generate(state: InterviewState) -> dict:
             state["guide"], state.get("messages", []), state.get("ledger", {}),
             brief_notes=notes,
             technique=playbook(state["action"], state.get("probe_type", "")),
+            blocklist=blocklist,
         ),
         max_tokens=300,
     )

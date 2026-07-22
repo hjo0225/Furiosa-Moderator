@@ -113,6 +113,9 @@ class Project(BaseModel):
     discord_webhook_url: str = Field(default="", exclude=True)  # 응답 노출 금지(시크릿). 저장·라우팅엔 사용.
     # 참가 조건 스크리너 (F4.3) — 동의 후·인터뷰 전 자격 판정. 비면 게이트 없음.
     screener: list[ScreenerQuestion] = Field(default_factory=list)
+    # 지식팩 금칙어 (F1.5) — 진행자가 절대 먼저 꺼내면 안 되는 주제·표현. 비면 제약 없음.
+    # 팩은 '읽기 전용·발화 금지'라, 이건 팩이 말해선 안 되는 것을 명시하는 두 번째 방어선이다.
+    blocklist: list[str] = Field(default_factory=list)
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
@@ -146,6 +149,11 @@ class WebhookSetIn(BaseModel):
 class ScreenerSetIn(BaseModel):
     """참가 조건 스크리너 설정/해제 (F4.3). 빈 리스트면 게이트를 없앤다."""
     screener: list[ScreenerQuestion] = Field(default_factory=list)
+
+
+class BlocklistSetIn(BaseModel):
+    """지식팩 금칙어 설정/해제 (F1.5). 빈 리스트면 금칙어 제약을 없앤다."""
+    blocklist: list[str] = Field(default_factory=list)
 
 
 class GuideGenerateIn(BaseModel):

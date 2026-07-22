@@ -171,6 +171,7 @@ def generate_user(
     action: str, question_id: str, probe_type: str, contradiction: str,
     guide: dict, messages: list, ledger: dict,
     brief_notes: list | tuple = (), technique: str = "",
+    blocklist: list | tuple = (),
 ) -> str:
     from .tools.ledger_report import ledger_report
 
@@ -189,10 +190,24 @@ def generate_user(
         parts.append(f"[대상 문항]\n{q['text']} (알아낼 것: {q.get('goal', '')})")
         if action == "revisit":
             parts.append(ledger_report(guide, ledger, qid=question_id))   # 도구: 원장 상세
+    # F1.5.6 — 팩(브리핑)은 읽기 전용·발화 금지. 진행자는 이 자료로 참가자의 말을 '이해'만 하고
+    # 팩의 내용을 참가자에게 말하거나 정정하지 않는다. 규칙을 주입 블록에 verbatim 으로 싣는다.
     if brief_notes:
         notes = "\n".join(f"- {n['text']} (출처: {n['source']})" for n in brief_notes)
-        parts.append("[의뢰자 브리핑 발췌 — 용어·사실 참고용]\n" + notes +
-                     "\n위 내용은 이해를 돕는 배경입니다. 특정 답을 유도하는 데 쓰지 마세요.")
+        parts.append(
+            "[참조 자료 — 배경지식 · 읽기 전용]\n" + notes + "\n"
+            "규칙: 위 자료는 참가자가 언급한 용어·브랜드의 의미를 이해하는 데만 씁니다. "
+            "이 자료의 내용을 참가자에게 말하지·설명하지·정정하지·암시하지 마세요. "
+            "참가자가 사실을 틀리게 말해도 바로잡지 마세요 — 참가자의 인식이 곧 데이터입니다. "
+            "이 자료에 없는 것을 참가자가 꺼내면 추측하지 말고 되물으세요(clarifying probe). "
+            "이 자료로 특정 답을 유도하는 데 쓰지 마세요(유도 질문을 만들지 않습니다)."
+        )
+    # 지식팩 금칙어(F1.5) — 진행자가 어떤 형태로도 '먼저' 꺼내면 안 되는 주제·표현.
+    if blocklist:
+        parts.append(
+            "[절대 언급 금지] 다음 주제·표현은 어떤 형태로도 먼저 꺼내지 마세요: "
+            + ", ".join(blocklist)
+        )
     if technique:
         parts.append(technique)
     parts.append("진행자의 다음 한 마디(질문 1~2문장, 한국어 존댓말)만 출력하세요.")
