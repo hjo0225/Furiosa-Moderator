@@ -32,6 +32,7 @@ from ..schemas.models import (
     Project,
     ProjectCreateIn,
     ResponseBucket,
+    ScreenerSetIn,
     WebhookSetIn,
     WebSelectIn,
 )
@@ -79,6 +80,14 @@ def set_webhook(pid: str, body: WebhookSetIn) -> Project:
     """프로젝트별 Discord 웹훅 override 설정. 빈 문자열이면 기본 채널로 폴백."""
     _require(pid)
     store.update_project(pid, {"discord_webhook_url": body.discord_webhook_url.strip()})
+    return _require(pid)
+
+
+@router.put("/{pid}/screener", response_model=Project)
+def set_screener(pid: str, body: ScreenerSetIn) -> Project:
+    """F4.3 참가 조건 스크리너 저장. 빈 리스트면 게이트를 없앤다."""
+    _require(pid)
+    store.update_project(pid, {"screener": [q.model_dump() for q in body.screener]})
     return _require(pid)
 
 

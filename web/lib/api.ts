@@ -7,6 +7,14 @@ const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
 export type ProjectStatus = "draft" | "deployed" | "closed";
 
+// 참가 조건 스크리너(F4.3). 의뢰자 설정용 — pass_options(통과 선택지)를 포함한다.
+export type ScreenerQuestion = {
+  id: string;
+  text: string;
+  options: string[];
+  pass_options: string[];
+};
+
 export type Project = {
   id: string;
   owner: string;
@@ -16,6 +24,7 @@ export type Project = {
   motivation: string; // 조사 동기
   utilization: string; // 활용 방안
   material_text: string; // 업로드한 참고 자료 (가이드 생성에 주입). 비어 있으면 미첨부.
+  screener: ScreenerQuestion[]; // 참가 조건 스크리너(F4.3). 비면 게이트 없음. 의뢰자 응답에만 담긴다.
   status: ProjectStatus;
   created_at: string;
   session_count: number;
@@ -119,7 +128,16 @@ export type Insight = {
 
 export type Dashboard = { project: Project; sessions: Session[]; insight: Insight | null };
 
-export type PublicProject = { id: string; title: string; topic: string; status: ProjectStatus };
+// 응답자에게 내려오는 변형 — 어느 답이 통과인지(pass_options)는 서버가 벗겨낸다.
+export type PublicScreenerQuestion = { id: string; text: string; options: string[] };
+
+export type PublicProject = {
+  id: string;
+  title: string;
+  topic: string;
+  status: ProjectStatus;
+  screener: PublicScreenerQuestion[];
+};
 
 export type SpeechVoice = { name: string; label: string };
 
@@ -196,6 +214,13 @@ export const saveGuide = (pid: string, guide: InterviewGuide) =>
 export const deployProject = (pid: string) =>
   post<{ project_id: string; url: string }>(`/api/projects/${pid}/deploy`);
 
+/** 참가 조건 스크리너 저장 (F4.3). 빈 배열이면 게이트 해제. 갱신된 프로젝트를 돌려준다. */
+export const saveScreener = (pid: string, screener: ScreenerQuestion[]) =>
+  request<Project>(`/api/projects/${pid}/screener`, {
+    method: "PUT",
+    body: JSON.stringify({ screener }),
+  });
+
 export const getDashboard = (pid: string) => request<Dashboard>(`/api/projects/${pid}/dashboard`);
 
 export const getTurns = (pid: string, sid: string) =>
@@ -208,6 +233,10 @@ export const regenerateInsight = (pid: string) => post<Insight>(`/api/projects/$
 
 export const getPublicProject = (pid: string) =>
   request<PublicProject>(`/api/public/projects/${pid}`);
+
+/** 참가 조건 판정 (F4.3) — 동의 후·세션 시작 전. 판정은 서버가 pass_options 로 한다(클라엔 없음). */
+export const screenParticipant = (pid: string, answers: Record<string, string>) =>
+  post<{ qualified: boolean }>(`/api/public/projects/${pid}/screen`, { answers });
 
 /** 동의 후 세션 생성 (R-1). */
 export const startSession = (pid: string, agreed: boolean, userAgent: string) =>

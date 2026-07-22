@@ -10,10 +10,12 @@ import {
   generateGuide,
   getGuide,
   saveGuide,
+  saveScreener,
   type GuideQuestion,
   type InterviewGuide,
   type Project,
   type ResponseBucket,
+  type ScreenerQuestion,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +53,13 @@ export function GuidePanel({
   const [dirty, setDirty] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // 참가 조건 스크리너(F4.3) — 가이드와 별개로 Project 에 붙는다. 자체 dirty/저장을 둔다.
+  const [screener, setScreener] = useState<ScreenerQuestion[]>(project.screener ?? []);
+  const [screenerDirty, setScreenerDirty] = useState(false);
+  const [savingScreener, setSavingScreener] = useState(false);
+  const [screenerMsg, setScreenerMsg] = useState<string | null>(null);
+  const [screenerErr, setScreenerErr] = useState<string | null>(null);
 
   const projectId = project.id;
 
@@ -216,6 +225,94 @@ export function GuidePanel({
     }));
   }
 
+  // --- 참가 조건 스크리너(F4.3) 편집 --------------------------------------
+  function patchScreenerQ(qi: number, updater: (q: ScreenerQuestion) => ScreenerQuestion) {
+    setScreener((qs) => qs.map((q, i) => (i === qi ? updater(q) : q)));
+    setScreenerDirty(true);
+    setScreenerMsg(null);
+  }
+
+  function addScreenerQuestion() {
+    setScreener((qs) => [
+      ...qs,
+      { id: newQuestionId(), text: "", options: ["", ""], pass_options: [] },
+    ]);
+    setScreenerDirty(true);
+    setScreenerMsg(null);
+  }
+
+  function removeScreenerQuestion(qi: number) {
+    setScreener((qs) => qs.filter((_, i) => i !== qi));
+    setScreenerDirty(true);
+    setScreenerMsg(null);
+  }
+
+  function updateScreenerText(qi: number, value: string) {
+    patchScreenerQ(qi, (q) => ({ ...q, text: value }));
+  }
+
+  function addOption(qi: number) {
+    patchScreenerQ(qi, (q) => ({ ...q, options: [...q.options, ""] }));
+  }
+
+  function updateOption(qi: number, oi: number, value: string) {
+    // 선택지 문자열을 바꾸면 pass_options(문자열로 보관)도 함께 갱신한다 — 안 그러면 통과 표시가 어긋난다.
+    patchScreenerQ(qi, (q) => {
+      const old = q.options[oi];
+      return {
+        ...q,
+        options: q.options.map((o, i) => (i === oi ? value : o)),
+        pass_options: q.pass_options.map((p) => (p === old ? value : p)),
+      };
+    });
+  }
+
+  function removeOption(qi: number, oi: number) {
+    patchScreenerQ(qi, (q) => {
+      const removed = q.options[oi];
+      return {
+        ...q,
+        options: q.options.filter((_, i) => i !== oi),
+        pass_options: q.pass_options.filter((p) => p !== removed),
+      };
+    });
+  }
+
+  function togglePass(qi: number, opt: string) {
+    patchScreenerQ(qi, (q) => ({
+      ...q,
+      pass_options: q.pass_options.includes(opt)
+        ? q.pass_options.filter((p) => p !== opt)
+        : [...q.pass_options, opt],
+    }));
+  }
+
+  async function saveScreenerCard() {
+    setSavingScreener(true);
+    setScreenerErr(null);
+    try {
+      // 저장 전에 빈 선택지·빈 문항을 정리한다. 빈 문자열 옵션·통과표시는 판정에서 무의미하다.
+      const cleaned: ScreenerQuestion[] = screener
+        .map((q) => {
+          const options = q.options.map((o) => o.trim()).filter(Boolean);
+          const pass_options = q.pass_options
+            .map((p) => p.trim())
+            .filter((p) => options.includes(p));
+          return { ...q, text: q.text.trim(), options, pass_options };
+        })
+        .filter((q) => q.text && q.options.length > 0);
+      const updated = await saveScreener(projectId, cleaned);
+      setScreener(updated.screener ?? cleaned);
+      setScreenerDirty(false);
+      setScreenerMsg("참가 조건을 저장했어요.");
+      onProjectChange();
+    } catch {
+      setScreenerErr("참가 조건 저장에 실패했어요.");
+    } finally {
+      setSavingScreener(false);
+    }
+  }
+
   if (loading) {
     return <p className="animate-pulse font-mono text-meta text-ink-faint">불러오는 중…</p>;
   }
@@ -362,6 +459,106 @@ export function GuidePanel({
         <Button size="sm" variant="ghost" className="mt-3" onClick={addQuestion}>
           + 질문 추가
         </Button>
+      </Card>
+
+      {/* 참가 조건 스크리너 (F4.3) — 동의 후·인터뷰 전 자격 판정 문항 */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-lead font-medium">참가 조건(스크리너)</h3>
+          <Button size="sm" variant="ghost" onClick={addScreenerQuestion}>
+            + 조건 추가
+          </Button>
+        </div>
+        <p className="mt-1 text-meta text-ink-faint">
+          동의 후·인터뷰 시작 전에 물어볼 자격 질문이에요. <b className="text-ink-soft">통과</b>로 표시한 답을
+          고른 사람만 인터뷰로 넘어갑니다. 비워두면 누구나 참여할 수 있어요.
+        </p>
+
+        {screener.length === 0 ? (
+          <p className="mt-4 rounded-lg bg-bg p-4 text-meta text-ink-faint ring-1 ring-line">
+            아직 참가 조건이 없어요. 필요하면 위 &lsquo;조건 추가&rsquo;로 만들어 주세요.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {screener.map((q, qi) => (
+              <li key={q.id || qi} className="rounded-lg bg-bg p-4 ring-1 ring-line">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="mt-2.5 font-mono text-2xs text-ink-faint">S{qi + 1}</span>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <textarea
+                      value={q.text}
+                      onChange={(e) => updateScreenerText(qi, e.target.value)}
+                      rows={2}
+                      placeholder="자격 질문 (예: 최근 3개월 내 배달앱을 이용하셨나요?)"
+                      className={cn(inputCls, "resize-none")}
+                    />
+                    <div className="rounded-lg bg-surface p-3 ring-1 ring-line">
+                      <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-faint">
+                        선택지 · 통과 체크 = 적격
+                      </p>
+                      <ul className="space-y-1.5">
+                        {q.options.map((opt, oi) => (
+                          <li key={oi} className="flex items-center gap-2">
+                            <label
+                              className="flex shrink-0 cursor-pointer items-center gap-1"
+                              title="이 답을 고르면 통과(적격)"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={q.pass_options.includes(opt) && !!opt.trim()}
+                                onChange={() => togglePass(qi, opt)}
+                                disabled={!opt.trim()}
+                                className="h-4 w-4 accent-[color:var(--accent-solid)] disabled:opacity-40"
+                              />
+                              <span className="text-2xs text-ink-faint">통과</span>
+                            </label>
+                            <input
+                              value={opt}
+                              onChange={(e) => updateOption(qi, oi, e.target.value)}
+                              placeholder="선택지"
+                              className={cn(inputCls, "text-meta min-w-0 flex-1")}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeOption(qi, oi)}
+                              aria-label="선택지 삭제"
+                              className="rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                            >
+                              ✕
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <Button size="sm" variant="ghost" className="mt-1.5" onClick={() => addOption(qi)}>
+                        + 선택지 추가
+                      </Button>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeScreenerQuestion(qi)}
+                    aria-label="조건 삭제"
+                    className="mt-0.5 shrink-0 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {screenerMsg && <p className="mt-3 text-meta text-go">{screenerMsg}</p>}
+        {screenerErr && <p className="mt-3 text-meta text-nogo">{screenerErr}</p>}
+
+        <div className="mt-4 flex items-center gap-2">
+          <Button size="sm" onClick={saveScreenerCard} disabled={savingScreener || !screenerDirty}>
+            {savingScreener ? "저장 중…" : screenerDirty ? "참가 조건 저장" : "저장됨"}
+          </Button>
+          {screenerDirty && (
+            <span className="text-2xs text-pivot">저장하지 않은 변경이 있어요.</span>
+          )}
+        </div>
       </Card>
 
       {message && <p className="text-meta text-go">{message}</p>}

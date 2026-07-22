@@ -89,6 +89,18 @@ class InterviewGuide(BaseModel):
     updated_at: datetime = Field(default_factory=_now)
 
 
+class ScreenerQuestion(BaseModel):
+    """참가 조건 문항 (F4.3) — 의뢰자가 정의하는 단일선택 자격 질문.
+
+    pass_options 는 '통과(적격)'로 치는 선택지들이다. 응답자에게 내려줄 때는
+    반드시 벗겨낸다(public.py) — 어느 답이 통과인지 알면 스크리너가 무력화된다.
+    """
+    id: str = ""
+    text: str
+    options: list[str] = Field(default_factory=list)
+    pass_options: list[str] = Field(default_factory=list)
+
+
 class Project(BaseModel):
     id: str = ""
     owner: str = "anonymous"     # MVP 무인증 — 링크 소유 기반
@@ -99,6 +111,8 @@ class Project(BaseModel):
     utilization: str = ""        # 활용 방안
     material_text: str = ""      # 의뢰자 업로드 자료 (가이드 생성 프롬프트 주입용)
     discord_webhook_url: str = Field(default="", exclude=True)  # 응답 노출 금지(시크릿). 저장·라우팅엔 사용.
+    # 참가 조건 스크리너 (F4.3) — 동의 후·인터뷰 전 자격 판정. 비면 게이트 없음.
+    screener: list[ScreenerQuestion] = Field(default_factory=list)
     status: ProjectStatus = "draft"
     created_at: datetime = Field(default_factory=_now)
     session_count: int = 0
@@ -127,6 +141,11 @@ class WebhookSetIn(BaseModel):
     @classmethod
     def _v_webhook(cls, v: str) -> str:
         return _validate_webhook_url(v)
+
+
+class ScreenerSetIn(BaseModel):
+    """참가 조건 스크리너 설정/해제 (F4.3). 빈 리스트면 게이트를 없앤다."""
+    screener: list[ScreenerQuestion] = Field(default_factory=list)
 
 
 class GuideGenerateIn(BaseModel):
@@ -174,6 +193,11 @@ class SessionStartIn(BaseModel):
     project_id: str = ""
     agreed: bool = False
     user_agent: str = ""
+
+
+class ScreenIn(BaseModel):
+    """스크리너 응답 (F4.3) — {문항 id: 선택한 옵션}. 판정은 서버가 pass_options 로 한다."""
+    answers: dict[str, str] = Field(default_factory=dict)
 
 
 class Turn(BaseModel):
