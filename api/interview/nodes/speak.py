@@ -48,12 +48,16 @@ def speak(state: InterviewState) -> dict:
         # ended_at 도 그때 찍힌다 (원격 R-4 시맨틱과 정렬).
         patch["status"] = "pending"
     store.update_session(pid, sid, patch)
+    # 문항별 턴 카운터 — 같은 문항이면 누적, 문항이 바뀌면 1로 리셋 (probe 여부 무관, 강제 advance 상한용)
+    q_streak = (state.get("q_streak", 0) + 1) if qid and qid == state.get("q_streak_qid") else 1
     return {
         "messages": [AIMessage(content=message)],
         "ledger": update_ledger(state.get("ledger", {}), qid, "touched", [], []),
         "covered": covered,
         "asked": asked,
         "probe_streak": (state.get("probe_streak", 0) + 1) if state.get("action") in ("probe", "clarify") else 0,
+        "q_streak": q_streak,
+        "q_streak_qid": qid,
         "draft": "",
         # utterance 는 리셋하지 않는다 — 뒤따르는 reflect(슬로우패스)가 읽어야 한다
     }

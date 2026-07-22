@@ -8,6 +8,7 @@ from ..state import InterviewState
 
 MAX_ASKED = 12  # moderator._MAX_ASKED 와 동일 값 — 구엔진 제거 시 여기가 단일 출처
 PROBE_STREAK_CAP = 3  # probe/clarify 연속 상한 — 넘으면 다음 pending 으로 결정론 전환 (보강 A)
+Q_STREAK_CAP = 4  # 같은 문항에 머문 총 턴 상한 — probe_streak 이 비-probe 턴에 리셋되는 구멍을 메운다(문항 고착 방지)
 
 
 def strategize(state: InterviewState) -> dict:
@@ -37,4 +38,10 @@ def strategize(state: InterviewState) -> dict:
         if pending:
             return {"action": "advance", "question_id": pending[0], "is_probe": False, "probe_type": ""}
         return {"action": "close", "end_reason": "fatigue"}
+    # 문항 고착 방지 — 같은 문항에 Q_STREAK_CAP 턴 이상 머물면(probe 여부 무관, 리셋 안 되는 카운터)
+    # 다음 pending 으로 강제 전환. probe_streak 이 비-probe 턴에 리셋돼 못 잡던 고착을 메운다.
+    if state.get("q_streak", 0) >= Q_STREAK_CAP and state.get("action") in ("probe", "clarify", "challenge", "redirect"):
+        pending = [qid for qid, e in ledger.items() if e["status"] == "pending"]
+        if pending:
+            return {"action": "advance", "question_id": pending[0], "is_probe": False, "probe_type": ""}
     return {}

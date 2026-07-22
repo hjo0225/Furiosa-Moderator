@@ -40,6 +40,8 @@ class InterviewState(TypedDict, total=False):
     covered: list[str]         # 대시보드용 출석부 — sessions.covered 와 동기
     asked: int                 # 진행자 질문 수 (speak 가 +1)
     probe_streak: int          # 현 문항 연속 꼬리질문(probe/clarify) 수 (speak 가 갱신, 보강 A 상한 대상)
+    q_streak: int              # 현 문항에 머문 총 턴 수(probe 아니어도 셈) — 강제 advance 상한 대상
+    q_streak_qid: str          # q_streak 가 세는 문항 id (문항이 바뀌면 1로 리셋)
 
     # 턴 스크래치 — 매 턴 덮어씀
     utterance: str
