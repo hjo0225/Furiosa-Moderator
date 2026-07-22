@@ -183,14 +183,14 @@ export function InterviewFlow({
   // --- 시작 전 화면 --------------------------------------------------------
   if (phase === "idle") {
     return (
-      <Card className="mx-auto flex min-h-[24rem] w-full max-w-2xl flex-col items-center justify-center gap-6 p-8 text-center sm:p-10">
+      <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 p-8 text-center sm:p-10">
         <p className="eyebrow">{en ? "Voice interview" : "음성 인터뷰"}</p>
         <p className="max-w-md text-lead leading-relaxed text-ink-soft">
           {en
             ? "A moderator will guide the interview by voice. Answer by speaking or typing, then press Next."
             : "진행자가 음성으로 질문을 드립니다. 말하거나 입력해 답한 뒤 ‘다음’을 눌러 주세요."}
         </p>
-        <Button type="button" size="lg" onClick={begin}>
+        <Button type="button" size="lg" onClick={begin} className="w-full max-w-xs">
           {en ? "Start interview" : "인터뷰 시작"}
         </Button>
         {error && <p className="text-meta text-nogo">{error}</p>}
@@ -209,7 +209,7 @@ export function InterviewFlow({
     toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error,
   };
   return (
-    <Card className="mx-auto w-full max-w-2xl overflow-hidden p-0">
+    <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden p-0">
       {/* 상단 — 진행률 (프로빙 미반영) */}
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
         <p className="font-mono text-2xs uppercase tracking-wider text-ink-faint">
@@ -230,7 +230,7 @@ export function InterviewFlow({
         )}
       </div>
 
-      <div className="flex min-h-[22rem] flex-col p-5 sm:p-8">
+      <div className="flex flex-1 flex-col p-5 sm:p-8">
         {phase === "review" || phase === "done" ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="text-title text-ink">{question}</p>
@@ -243,7 +243,7 @@ export function InterviewFlow({
                     ? "That's the end of the interview. Submit to send your answers."
                     : "인터뷰가 끝났어요. 제출해야 답변이 전달됩니다."}
                 </p>
-                <Button type="button" size="lg" onClick={() => void submit()} disabled={submitting}>
+                <Button type="button" size="lg" onClick={() => void submit()} disabled={submitting} className="w-full max-w-xs">
                   {submitting ? (en ? "Submitting…" : "제출 중…") : en ? "Submit answers" : "답변 제출하기"}
                 </Button>
                 <p className="text-2xs text-ink-faint">
@@ -264,8 +264,8 @@ export function InterviewFlow({
             </div>
           </div>
         ) : (
-          // 기본 — 센터 컬럼(방향 1)
-          <div className="mx-auto flex w-full max-w-xl flex-1 flex-col">
+          // 기본 — 센터 컬럼(방향 1). 카드 폭을 그대로 써서 화면을 채운다
+          <div className="flex w-full flex-1 flex-col">
             <QuestionAndAnswer {...qaProps} />
           </div>
         )}
@@ -334,7 +334,7 @@ function QuestionAndAnswer(p: {
               disabled={busy || phase === "transcribing"}
               aria-label={en ? "Record answer" : "음성으로 답하기"}
               className={cn(
-                "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-meta font-medium transition-colors disabled:opacity-40",
+                "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lead transition-colors disabled:opacity-40",
                 phase === "recording" ? "bg-nogo/10 text-nogo" : "bg-accent-wash text-accent-deep ring-1 ring-line hover:bg-accent-wash/70",
               )}
             >
@@ -353,16 +353,11 @@ function QuestionAndAnswer(p: {
             rows={3}
             disabled={!canType}
             placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
-            className={fieldClass("min-h-12 flex-1 resize-none text-lead")}
+            className={fieldClass("min-h-14 flex-1 resize-none text-lead")}
           />
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={!canNext}
-            className="h-12 shrink-0 rounded-xl bg-accent-solid px-5 text-base font-medium text-accent-on disabled:opacity-40"
-          >
+          <Button type="button" size="lg" onClick={goNext} disabled={!canNext} className="shrink-0">
             {en ? "Next" : "다음"}
-          </button>
+          </Button>
         </div>
       </div>
     </>
