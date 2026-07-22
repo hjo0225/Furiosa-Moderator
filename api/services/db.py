@@ -112,6 +112,10 @@ class TurnRow(Base):
     emotion_confidence: Mapped[float] = mapped_column(Float, default=0.0)
     is_probe: Mapped[bool] = mapped_column(Boolean, default=False)
     question_id: Mapped[str] = mapped_column(String(16), default="")
+    # F6.1 응답 버킷 분류 — 슬로우패스(reflect_bucket)가 사후 기입. 분포는 DB 실측이 센다(계약 1).
+    bucket_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    bucket_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    bucket_evidence: Mapped[str] = mapped_column(Text, default="")
     pii_types: Mapped[list] = mapped_column(JSONB, default=list)
     guardrail_rewritten: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
@@ -128,6 +132,8 @@ class InsightRow(Base):
     overall: Mapped[str] = mapped_column(Text, default="")
     themes: Mapped[list] = mapped_column(JSONB, default=list)
     sentiment: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # 문항별 버킷 분포(F6.4) — sentiment 와 같은 DB 실측을 인사이트 행에 함께 보존한다.
+    bucket_distribution: Mapped[dict] = mapped_column(JSONB, default=dict)
     session_count: Mapped[int] = mapped_column(Integer, default=0)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

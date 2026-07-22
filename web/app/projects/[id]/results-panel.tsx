@@ -17,10 +17,12 @@ import { Button, Card } from "@/components/shared";
 import { TranscriptView } from "@/components/response-viewer";
 import {
   getDashboard,
+  getGuide,
   getTurns,
   regenerateInsight,
   type Dashboard,
   type Insight,
+  type InterviewGuide,
   type Session,
   type Turn,
 } from "@/lib/api";
@@ -73,6 +75,7 @@ function csvCell(v: unknown): string {
 
 export function ResultsPanel({ projectId }: { projectId: string }) {
   const [data, setData] = useState<Dashboard | null>(null);
+  const [guide, setGuide] = useState<InterviewGuide | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[] | null>(null);
@@ -86,6 +89,14 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useEffect(load, [load]);
+
+  // 버킷 분포는 bucket_id 만 온다 — 라벨은 가이드의 response_buckets 로 매핑한다.
+  // 가이드가 없거나 404 면 분포 섹션만 조용히 감춘다(대시보드 나머지는 그대로).
+  useEffect(() => {
+    getGuide(projectId)
+      .then(setGuide)
+      .catch(() => setGuide(null));
+  }, [projectId]);
 
   // 세션 선택 → 전사 로드
   useEffect(() => {
@@ -126,6 +137,33 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
       })),
     [insight],
   );
+
+  // 문항별 응답 버킷 분포(F6.4) — DB 실측 카운트를 가이드 버킷 라벨과 합친다.
+  // 아직 분류된 응답이 없는 문항(total 0)은 감춘다.
+  const bucketSections = useMemo(() => {
+    const dist = insight?.bucket_distribution ?? {};
+    return (guide?.questions ?? [])
+      .filter((q) => q.response_buckets.length > 0)
+      .map((q) => {
+        const counts = dist[q.id] ?? {};
+        const total = q.response_buckets.reduce((sum, b) => sum + (counts[b.id] ?? 0), 0);
+        return {
+          id: q.id,
+          text: q.text,
+          total,
+          bars: q.response_buckets.map((b) => {
+            const count = counts[b.id] ?? 0;
+            return {
+              id: b.id,
+              label: b.label,
+              count,
+              pct: total ? Math.round((count / total) * 100) : 0,
+            };
+          }),
+        };
+      })
+      .filter((sec) => sec.total > 0);
+  }, [guide, insight]);
 
   async function refreshInsight() {
     setInsightBusy(true);
@@ -301,6 +339,42 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {bucketSections.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-meta font-medium text-ink-soft">문항별 응답 분류</h3>
+                <div className="mt-3 space-y-4">
+                  {bucketSections.map((sec) => (
+                    <div key={sec.id} className="rounded-lg bg-bg p-4 ring-1 ring-line">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-meta font-medium text-ink">{sec.text}</p>
+                        <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                          응답 {sec.total}건
+                        </span>
+                      </div>
+                      <ul className="mt-3 space-y-2">
+                        {sec.bars.map((bar) => (
+                          <li key={bar.id}>
+                            <div className="flex items-baseline justify-between gap-2 text-meta">
+                              <span className="text-ink-soft">{bar.label}</span>
+                              <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                                {bar.count} · {bar.pct}%
+                              </span>
+                            </div>
+                            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-accent-wash">
+                              <div
+                                className="h-full rounded-full bg-accent-solid transition-[width]"
+                                style={{ width: `${bar.pct}%` }}
+                              />
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
