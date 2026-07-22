@@ -326,36 +326,36 @@ function QuestionAndAnswer(p: {
         )}
         {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
 
-        <div className="flex items-end gap-2">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              goNext();
+            }
+          }}
+          rows={3}
+          disabled={!canType}
+          placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
+          className={fieldClass("min-h-[7rem] w-full resize-none text-lead")}
+        />
+        {/* 컨트롤 — 마이크·다음 모두 공유 Button(동일 h-14 pill)으로 통일 */}
+        <div className="mt-3 flex items-center gap-2">
           {recorder.supported && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="lg"
               onClick={() => void toggleRecord()}
               disabled={busy || phase === "transcribing"}
               aria-label={en ? "Record answer" : "음성으로 답하기"}
-              className={cn(
-                "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lead transition-colors disabled:opacity-40",
-                phase === "recording" ? "bg-nogo/10 text-nogo" : "bg-accent-wash text-accent-deep ring-1 ring-line hover:bg-accent-wash/70",
-              )}
+              className={cn("w-14 shrink-0 !px-0", phase === "recording" && "!bg-nogo/10 !text-nogo !ring-nogo/40")}
             >
-              {phase === "recording" ? (en ? "■" : "■") : "🎤"}
-            </button>
+              {phase === "recording" ? "■" : "🎤"}
+            </Button>
           )}
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                goNext();
-              }
-            }}
-            rows={3}
-            disabled={!canType}
-            placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
-            className={fieldClass("min-h-14 flex-1 resize-none text-lead")}
-          />
-          <Button type="button" size="lg" onClick={goNext} disabled={!canNext} className="shrink-0">
+          <Button type="button" size="lg" onClick={goNext} disabled={!canNext} className="flex-1">
             {en ? "Next" : "다음"}
           </Button>
         </div>
