@@ -1,6 +1,7 @@
 """응답 버킷 모델 · 정규화 (2A)."""
 from __future__ import annotations
 
+from api.prompts.guide import GUIDE_SYSTEM
 from api.schemas.models import GuideQuestion, InterviewGuide, ResponseBucket
 
 
@@ -24,3 +25,11 @@ def test_bucket_roundtrips_inside_question():
 def test_bucket_defaults_empty():
     q = GuideQuestion(id="q1", text="t")
     assert q.response_buckets == []
+
+
+def test_guide_system_has_bucket_rules():
+    assert "response_buckets" in GUIDE_SYSTEM
+    assert "definition" in GUIDE_SYSTEM
+    assert "상호배타" in GUIDE_SYSTEM        # MECE
+    assert "is_catchall" in GUIDE_SYSTEM
+    assert "is_negative_case" in GUIDE_SYSTEM
