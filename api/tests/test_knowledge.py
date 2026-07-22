@@ -254,7 +254,7 @@ def test_search_knowledge_drops_out_of_range_and_clamps_to_k(monkeypatch):
 # --- rows_from_df (ingest CLI 순수 변환부) ------------------------------------
 
 def test_rows_from_df_concatenates_skips_blanks_and_extracts_meta():
-    import pandas as pd
+    pd = pytest.importorskip("pandas")   # pandas 는 오프라인 ingest 전용 dep — CI(미설치)에선 스킵
 
     ing = _load(_SCRIPTS / "ingest_knowledge.py")
     df = pd.DataFrame([
@@ -274,7 +274,7 @@ def test_rows_from_df_concatenates_skips_blanks_and_extracts_meta():
 
 def test_main_ingests_rows_with_embeddings(monkeypatch):
     """main() dry-run — read_parquet·embed_texts·db_session 을 가짜로, insert 를 검증."""
-    import pandas as pd
+    pd = pytest.importorskip("pandas")   # pandas 는 오프라인 ingest 전용 dep — CI(미설치)에선 스킵
 
     ing = _load(_SCRIPTS / "ingest_knowledge.py")
     df = pd.DataFrame([
@@ -316,7 +316,7 @@ def test_main_ingests_rows_with_embeddings(monkeypatch):
 
 def test_main_replace_deletes_corpus_before_insert(monkeypatch):
     """--replace 면 insert 전에 해당 corpus 대상 delete 문이 먼저 실행된다(멱등 재적재)."""
-    import pandas as pd
+    pd = pytest.importorskip("pandas")   # pandas 는 오프라인 ingest 전용 dep — CI(미설치)에선 스킵
 
     ing = _load(_SCRIPTS / "ingest_knowledge.py")
     df = pd.DataFrame([{"persona": "페르소나1", "age": 30}])
@@ -358,7 +358,7 @@ def test_main_replace_deletes_corpus_before_insert(monkeypatch):
 
 def test_main_without_replace_issues_no_delete(monkeypatch):
     """플래그 없으면(기본) delete 없이 append — 기존 동작 불변 회귀."""
-    import pandas as pd
+    pd = pytest.importorskip("pandas")   # pandas 는 오프라인 ingest 전용 dep — CI(미설치)에선 스킵
 
     ing = _load(_SCRIPTS / "ingest_knowledge.py")
     df = pd.DataFrame([{"persona": "페르소나1", "age": 30}])
