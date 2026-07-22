@@ -34,11 +34,24 @@ def _validate_webhook_url(v: str) -> str:
 ProjectStatus = Literal["draft", "deployed", "closed"]
 
 
+class ResponseBucket(BaseModel):
+    """질문별 응답 분류 카테고리(코드북)이자 프로빙 목표 (PRD F2.3).
+
+    id/분포 카운트는 서버가 채운다 — LLM 은 label/definition 만 만든다(계약 1).
+    """
+    id: str = ""
+    label: str
+    definition: str = ""              # 1문장 정의. 생성 스키마에서 필수로 승격됨(F2.3.2)
+    is_catchall: bool = False         # '기타' 버킷 (F2.3.3)
+    is_negative_case: bool = False    # '불편 없음' 류 (F2.3.4)
+
+
 class GuideQuestion(BaseModel):
     id: str
     text: str
     goal: str = ""          # 이 문항으로 알아내려는 것 (M-1 커버리지 판정에 쓰인다)
     order: int = 0
+    response_buckets: list[ResponseBucket] = Field(default_factory=list)
 
 
 class InterviewGuide(BaseModel):
