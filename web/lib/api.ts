@@ -30,7 +30,20 @@ export type MaterialUploadResult = {
   summarized?: boolean; // 긴 자료를 LLM이 요약해 저장한 경우 true (백엔드 ② 이후)
 };
 
-export type GuideQuestion = { id: string; text: string; goal: string; order: number };
+export type ResponseBucket = {
+  id: string;
+  label: string;
+  definition: string;
+  is_catchall: boolean;
+  is_negative_case: boolean;
+};
+export type GuideQuestion = {
+  id: string;
+  text: string;
+  goal: string;
+  order: number;
+  response_buckets: ResponseBucket[];
+};
 
 export type InterviewGuide = {
   project_id: string;

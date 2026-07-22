@@ -13,6 +13,7 @@ import {
   type GuideQuestion,
   type InterviewGuide,
   type Project,
+  type ResponseBucket,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -154,6 +155,47 @@ export function GuidePanel({
     }));
   }
 
+  function updateBucket(qi: number, bi: number, field: "label" | "definition", value: string) {
+    patch((g) => ({
+      ...g,
+      questions: g.questions.map((q, i) =>
+        i === qi
+          ? { ...q, response_buckets: q.response_buckets.map((b, j) => (j === bi ? { ...b, [field]: value } : b)) }
+          : q,
+      ),
+    }));
+  }
+  function removeBucket(qi: number, bi: number) {
+    patch((g) => ({
+      ...g,
+      questions: g.questions.map((q, i) =>
+        i === qi ? { ...q, response_buckets: q.response_buckets.filter((_, j) => j !== bi) } : q,
+      ),
+    }));
+  }
+  function addBucket(qi: number) {
+    patch((g) => ({
+      ...g,
+      questions: g.questions.map((q, i) =>
+        i === qi
+          ? {
+              ...q,
+              response_buckets: [
+                ...q.response_buckets,
+                {
+                  id: `${q.id}_b${q.response_buckets.length + 1}`,
+                  label: "",
+                  definition: "",
+                  is_catchall: false,
+                  is_negative_case: false,
+                } satisfies ResponseBucket,
+              ],
+            }
+          : q,
+      ),
+    }));
+  }
+
   function moveQuestion(idx: number, dir: -1 | 1) {
     const to = idx + dir;
     patch((g) => {
@@ -169,7 +211,7 @@ export function GuidePanel({
       ...g,
       questions: [
         ...g.questions,
-        { id: newQuestionId(), text: "", goal: "", order: g.questions.length },
+        { id: newQuestionId(), text: "", goal: "", order: g.questions.length, response_buckets: [] },
       ],
     }));
   }
@@ -242,6 +284,47 @@ export function GuidePanel({
                     placeholder="이 질문으로 알아내려는 것 (선택)"
                     className={cn(inputCls, "text-meta")}
                   />
+                  <div className="mt-2 rounded-lg bg-surface p-3 ring-1 ring-line">
+                    <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-faint">
+                      응답 버킷 · {q.response_buckets.length}개
+                    </p>
+                    <ul className="space-y-1.5">
+                      {q.response_buckets.map((b, bi) => (
+                        <li key={b.id || bi} className="flex items-start gap-2">
+                          <span
+                            className={cn(
+                              "mt-2 h-2 w-2 shrink-0 rounded-full",
+                              b.is_catchall ? "bg-ink-faint" : b.is_negative_case ? "bg-pivot" : "bg-accent-solid",
+                            )}
+                            aria-hidden
+                          />
+                          <input
+                            value={b.label}
+                            onChange={(e) => updateBucket(i, bi, "label", e.target.value)}
+                            placeholder="버킷 이름"
+                            className={cn(inputCls, "text-meta")}
+                          />
+                          <input
+                            value={b.definition}
+                            onChange={(e) => updateBucket(i, bi, "definition", e.target.value)}
+                            placeholder="1문장 정의"
+                            className={cn(inputCls, "text-meta flex-[2]")}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeBucket(i, bi)}
+                            aria-label="버킷 삭제"
+                            className="mt-1 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button size="sm" variant="ghost" className="mt-1.5" onClick={() => addBucket(i)}>
+                      + 버킷 추가
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
                   <button
