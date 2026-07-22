@@ -11,6 +11,18 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 
+def _load_apify_token(env) -> str:
+    """APIFY_TOKEN(env) 우선, 없으면 APIFY_TOKEN_FILE(txt 경로)에서 읽는다."""
+    tok = env.get("APIFY_TOKEN", "")
+    if not tok and env.get("APIFY_TOKEN_FILE"):
+        from pathlib import Path
+        try:
+            tok = Path(env["APIFY_TOKEN_FILE"]).read_text(encoding="utf-8")
+        except OSError:
+            tok = ""
+    return tok.lstrip("﻿").strip()
+
+
 class Settings(BaseModel):
     # --- LLM (OpenAI 호환) ---------------------------------------------------
     # Furiosa RNGD 서빙. base_url 만 바꾸면 vLLM·OpenAI 등으로 교체된다(아키텍처 §2 이식성).
@@ -33,6 +45,9 @@ class Settings(BaseModel):
     embed_api_key: str = ""
     rerank_model: str = "furiosa-ai/Qwen3-Reranker-8B"
     rerank_api_key: str = ""
+
+    # --- 웹 리서치 (Apify) ----------------------------------------------------
+    apify_token: str = ""
 
     # --- GCP -----------------------------------------------------------------
     gcp_project: str = ""
@@ -67,6 +82,7 @@ def get_settings() -> Settings:
         llm_disable_thinking=env.get("LLM_DISABLE_THINKING", "1") not in ("0", "false", "False"),
         embed_api_key=env.get("EMBED_API_KEY", "").lstrip("﻿").strip(),
         rerank_api_key=env.get("RERANK_API_KEY", "").lstrip("﻿").strip(),
+        apify_token=_load_apify_token(env),
         gcp_project=env.get("GCP_PROJECT", "") or env.get("GOOGLE_CLOUD_PROJECT", ""),
         stt_location=env.get("STT_LOCATION", Settings().stt_location),
         stt_model=env.get("STT_MODEL", Settings().stt_model),
