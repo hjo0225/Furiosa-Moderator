@@ -100,6 +100,9 @@ export type TurnOut = {
 
 export type ThemeInsight = { theme: string; summary: string; quotes: string[]; mention_count: number };
 
+// 문항별 AI 요약(F6.3) — 문항마다 headline(핵심 발견) + summary(2~4문장). theme 요약처럼 LLM 해석 출력.
+export type QuestionSummary = { question_id: string; headline: string; summary: string };
+
 export type Insight = {
   project_id: string;
   overall: string;
@@ -108,6 +111,8 @@ export type Insight = {
   // 문항별 응답 버킷 분포(F6.4) — { question_id: { bucket_id: 응답자 수 } }.
   // sentiment 와 같이 DB 실측(LLM 이 세지 않음). bucket_id → 라벨은 가이드의 response_buckets 로 매핑.
   bucket_distribution: Record<string, Record<string, number>>;
+  // 문항별 AI 요약(F6.3) — bucket_distribution 이 '분류·개수'라면 이건 '무엇을 말했나'의 서술 요약.
+  question_summaries: QuestionSummary[];
   session_count: number;
   generated_at: string;
 };

@@ -16,8 +16,11 @@ from ..services.material import MaterialError, compose_guide_material, extract_t
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
 from ..prompts.insight import (
     INSIGHT_SYSTEM,
+    QUESTION_SUMMARY_SYSTEM,
     SESSION_SUMMARY_SYSTEM,
+    QuestionSummariesOut,
     insight_user,
+    question_summary_user,
     session_summary_user,
 )
 from ..schemas.models import (
@@ -344,6 +347,26 @@ def session_turns(pid: str, sid: str) -> list[dict]:
     return [t.model_dump(mode="json") for t in store.list_turns(pid, sid)]
 
 
+def _answers_by_question(turns_by_session: list[list]) -> dict[str, list[str]]:
+    """완료 세션들의 응답자 턴을 question_id 별로 묶는다 — 문항별 요약(F6.3)의 입력.
+
+    빈 텍스트·빈 question_id 는 제외한다. '세는' 게 아니라 '무엇을 말했나'를 모으는 것뿐이라
+    LLM 해석 출력 계열이다(계약 1 의 개수 집계와 무관 — 그건 store.bucket_distribution 이 한다).
+    세션·문항 순서를 보존해 요약 입력이 결정론적으로 만들어지게 한다.
+    """
+    grouped: dict[str, list[str]] = {}
+    for turns in turns_by_session:
+        for t in turns:
+            if t.role != "respondent":
+                continue
+            qid = (t.question_id or "").strip()
+            text = (t.text or "").strip()
+            if not qid or not text:
+                continue
+            grouped.setdefault(qid, []).append(text)
+    return grouped
+
+
 @router.post("/{pid}/insight", response_model=Insight)
 def build_insight(pid: str) -> Insight:
     """M-4 요약·집계. 완료 세션의 요약을 모아 프로젝트 인사이트를 만든다."""
@@ -411,6 +434,30 @@ def build_insight(pid: str) -> Insight:
     # 문항별 응답 버킷 분포도 DB 실측으로 채운다(F6.4) — sentiment 와 같은 계약 1.
     insight.bucket_distribution = store.bucket_distribution(pid)
     insight.session_count = len(summaries)
+
+    # 문항별 AI 요약(F6.3) — 여기부터는 LLM '해석' 출력이다(theme 요약과 같은 계열).
+    # 위 DB 실측 카운트는 절대 건드리지 않는다. best-effort: 실패해도 인사이트 전체를
+    # 막지 않고 문항 요약만 비운 채 진행한다.
+    grouped = _answers_by_question([store.list_turns(pid, s.id) for s in sessions])
+    if grouped:
+        questions = guide.questions if guide else []
+        items = [
+            {"question_id": q.id, "question_text": q.text, "answers": grouped[q.id]}
+            for q in questions
+            if grouped.get(q.id)
+        ]
+        if items:
+            try:
+                qs_out, _ = llm.structured(
+                    QUESTION_SUMMARY_SYSTEM,
+                    question_summary_user(items),
+                    QuestionSummariesOut,
+                    max_tokens=3000,
+                )
+                insight.question_summaries = qs_out.items
+            except LLMError as e:
+                log.warning("문항별 요약 생성 실패 (project=%s): %s", pid, e)
+
     return store.save_insight(pid, insight)
 
 
