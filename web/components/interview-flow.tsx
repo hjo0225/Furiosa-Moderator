@@ -11,7 +11,6 @@
 // (자동재생 권한 확보 + 아바타 진폭).
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ModeratorAvatar } from "@/components/moderator-avatar";
 import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
 import { sendTurn, submitSession, transcribeAudio } from "@/lib/api";
@@ -180,9 +179,6 @@ export function InterviewFlow({
   if (phase === "idle") {
     return (
       <Card className="flex min-h-[26rem] flex-col items-center justify-center gap-5 p-8 text-center">
-        <div className="w-32">
-          <ModeratorAvatar speaking={false} getLevel={tts.getLevel} />
-        </div>
         <p className="max-w-md text-lead leading-relaxed text-ink-soft">
           {en
             ? "A moderator will guide the interview by voice. Answer by speaking or typing, then press Next."
@@ -201,16 +197,10 @@ export function InterviewFlow({
     );
   }
 
-  // --- 인터뷰 화면 (아바타 | 카드) -----------------------------------------
+  // --- 인터뷰 화면 (센터 컬럼) ---------------------------------------------
   return (
-    <Card className="grid gap-5 p-5 sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
-      {/* 왼쪽 — 진행자 아바타 */}
-      <div className="flex flex-col items-center gap-3">
-        <ModeratorAvatar speaking={tts.speaking} getLevel={tts.getLevel} />
-        <p className="font-mono text-2xs uppercase text-accent">🎙 {en ? "Moderator" : "진행자"}</p>
-      </div>
-
-      {/* 오른쪽 — 질문 + 답변 */}
+    <Card className="mx-auto w-full max-w-2xl p-5 sm:p-6">
+      {/* 질문 + 답변 */}
       <div className="flex min-h-[20rem] flex-col">
         {phase === "review" || phase === "done" ? (
           <div className="flex flex-1 flex-col justify-center gap-3 text-center">
