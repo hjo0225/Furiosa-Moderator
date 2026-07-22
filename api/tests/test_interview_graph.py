@@ -440,39 +440,27 @@ def test_speak_emits_tokens_via_custom_stream(fakes):
     assert "".join(chunks) == "안녕하세요! 어떤 배달앱을 쓰세요?"   # 토큰 합 = 최종 발화
 
 
-def test_unknown_terms_trigger_brief_lookup(fakes, monkeypatch):
-    from api.interview.nodes import generate as gen_mod
-    looked = {}
+def test_unknown_terms_no_live_lookup(fakes, monkeypatch):
+    """RAG-1: 인터뷰 중에는 라이브 RAG 검색을 하지 않는다 (검색은 가이드 생성으로 이동, 별도 티켓).
 
-    def fake_lookup(pid, terms, k=2):
-        looked["terms"] = list(terms)
-        return [{"text": "배민클럽=구독제", "source": "자료", "score": 0.9}]
-
-    monkeypatch.setattr(gen_mod.brief, "lookup", fake_lookup)
+    unknown_terms 가 있어도 generate 노드는 brief 검색을 배선하지 않는다. 검색 진입점인
+    briefing.pipeline.search_chunks 를 원본에서 스파이로 감싸, 어떤 경로로도 호출되지
+    않음을 확인한다(누군가 라이브 RAG 를 다시 배선하면 이 테스트가 깨진다).
+    """
+    from api.briefing import pipeline as pipeline_mod
+    searched = []
+    monkeypatch.setattr(pipeline_mod, "search_chunks", lambda *a, **k: searched.append(1) or [])
     fs, set_llm = fakes
     llm = set_llm(outs=[ListenOut(action="probe", question_id="q1", unknown_terms=["배민클럽"]),
                         ReflectOut()],
-                  texts=["오프닝?", "브리핑 반영 질문?"])
+                  texts=["오프닝?", "질문?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
-    g.invoke(Command(resume="배민클럽 때문에 갈아탔어요"), config)
-    assert looked["terms"] == ["배민클럽"]                   # 구조화 출력이 brief 를 지정했다
-    assert "배민클럽=구독제" in llm.text_prompts[-1]         # 검색 결과가 생성 프롬프트에 주입
-
-
-def test_no_unknown_terms_no_lookup(fakes, monkeypatch):
-    from api.interview.nodes import generate as gen_mod
-    called = []
-    monkeypatch.setattr(gen_mod.brief, "lookup", lambda *a, **k: called.append(1) or [])
-    fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
-            texts=["오프닝?", "질문?"])
-    g = build_graph(InMemorySaver())
-    config = {"configurable": {"thread_id": "s1"}}
-    _start(g, config)
-    g.invoke(Command(resume="그냥 편해서요"), config)
-    assert called == []                                      # 지정 없으면 검색도 없다
+    r = g.invoke(Command(resume="배민클럽 때문에 갈아탔어요"), config)
+    assert searched == []                             # 라이브 RAG 검색이 전혀 발동하지 않음
+    assert "참조 자료" not in llm.text_prompts[-1]     # 브리핑 주입 블록이 생성 프롬프트에 없음
+    assert "__interrupt__" in r                        # 인터뷰는 정상 진행(생성 노드가 초안 산출)
 
 
 def test_engine_stream_turn_yields_tokens_then_meta(fakes, monkeypatch):
