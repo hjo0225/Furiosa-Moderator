@@ -24,6 +24,7 @@ from ..prompts.insight import (
     session_summary_user,
 )
 from ..schemas.models import (
+    BlocklistSetIn,
     GuideGenerateIn,
     GuideQuestion,
     Insight,
@@ -88,6 +89,15 @@ def set_screener(pid: str, body: ScreenerSetIn) -> Project:
     """F4.3 참가 조건 스크리너 저장. 빈 리스트면 게이트를 없앤다."""
     _require(pid)
     store.update_project(pid, {"screener": [q.model_dump() for q in body.screener]})
+    return _require(pid)
+
+
+@router.put("/{pid}/blocklist", response_model=Project)
+def set_blocklist(pid: str, body: BlocklistSetIn) -> Project:
+    """F1.5 지식팩 금칙어 저장. 빈/공백 항목은 버리고, 빈 리스트면 금칙어 제약을 없앤다."""
+    _require(pid)
+    cleaned = [w.strip() for w in body.blocklist if w and w.strip()]
+    store.update_project(pid, {"blocklist": cleaned})
     return _require(pid)
 
 

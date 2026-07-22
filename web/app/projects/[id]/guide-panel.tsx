@@ -9,6 +9,7 @@ import {
   deployProject,
   generateGuide,
   getGuide,
+  saveBlocklist,
   saveGuide,
   saveScreener,
   type GuideQuestion,
@@ -60,6 +61,13 @@ export function GuidePanel({
   const [savingScreener, setSavingScreener] = useState(false);
   const [screenerMsg, setScreenerMsg] = useState<string | null>(null);
   const [screenerErr, setScreenerErr] = useState<string | null>(null);
+
+  // 지식팩 금칙어(F1.5) — 스크리너처럼 Project 에 붙는다. 자체 dirty/저장을 둔다.
+  const [blocklist, setBlocklist] = useState<string[]>(project.blocklist ?? []);
+  const [blocklistDirty, setBlocklistDirty] = useState(false);
+  const [savingBlocklist, setSavingBlocklist] = useState(false);
+  const [blocklistMsg, setBlocklistMsg] = useState<string | null>(null);
+  const [blocklistErr, setBlocklistErr] = useState<string | null>(null);
 
   const projectId = project.id;
 
@@ -313,6 +321,43 @@ export function GuidePanel({
     }
   }
 
+  // --- 지식팩 금칙어(F1.5) 편집 -------------------------------------------
+  function addBlockword() {
+    setBlocklist((ws) => [...ws, ""]);
+    setBlocklistDirty(true);
+    setBlocklistMsg(null);
+  }
+
+  function updateBlockword(idx: number, value: string) {
+    setBlocklist((ws) => ws.map((w, i) => (i === idx ? value : w)));
+    setBlocklistDirty(true);
+    setBlocklistMsg(null);
+  }
+
+  function removeBlockword(idx: number) {
+    setBlocklist((ws) => ws.filter((_, i) => i !== idx));
+    setBlocklistDirty(true);
+    setBlocklistMsg(null);
+  }
+
+  async function saveBlocklistCard() {
+    setSavingBlocklist(true);
+    setBlocklistErr(null);
+    try {
+      // 저장 전에 빈/공백 항목을 정리한다(서버도 다시 거른다 — 이중 방어).
+      const cleaned = blocklist.map((w) => w.trim()).filter(Boolean);
+      const updated = await saveBlocklist(projectId, cleaned);
+      setBlocklist(updated.blocklist ?? cleaned);
+      setBlocklistDirty(false);
+      setBlocklistMsg("금칙어를 저장했어요.");
+      onProjectChange();
+    } catch {
+      setBlocklistErr("금칙어 저장에 실패했어요.");
+    } finally {
+      setSavingBlocklist(false);
+    }
+  }
+
   if (loading) {
     return <p className="animate-pulse font-mono text-meta text-ink-faint">불러오는 중…</p>;
   }
@@ -556,6 +601,60 @@ export function GuidePanel({
             {savingScreener ? "저장 중…" : screenerDirty ? "참가 조건 저장" : "저장됨"}
           </Button>
           {screenerDirty && (
+            <span className="text-2xs text-pivot">저장하지 않은 변경이 있어요.</span>
+          )}
+        </div>
+      </Card>
+
+      {/* 지식팩 금칙어 (F1.5) — 진행자가 먼저 꺼내면 안 되는 주제·표현 */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-lead font-medium">말하면 안 되는 것 (금칙어)</h3>
+          <Button size="sm" variant="ghost" onClick={addBlockword}>
+            + 금칙어 추가
+          </Button>
+        </div>
+        <p className="mt-1 text-meta text-ink-faint">
+          진행자가 어떤 형태로도 <b className="text-ink-soft">먼저</b> 꺼내면 안 되는 주제·표현이에요.
+          진행자는 이 자료를 이해에만 쓰고 참가자에게 먼저 말하지 않아요. 비워두면 제약이 없어요.
+        </p>
+
+        {blocklist.length === 0 ? (
+          <p className="mt-4 rounded-lg bg-bg p-4 text-meta text-ink-faint ring-1 ring-line">
+            아직 금칙어가 없어요. 필요하면 위 &lsquo;금칙어 추가&rsquo;로 만들어 주세요.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {blocklist.map((word, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <span className="font-mono text-2xs text-ink-faint">✕</span>
+                <input
+                  value={word}
+                  onChange={(e) => updateBlockword(i, e.target.value)}
+                  placeholder="예: 가격 정책 변경"
+                  className={cn(inputCls, "min-w-0 flex-1")}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeBlockword(i)}
+                  aria-label="금칙어 삭제"
+                  className="shrink-0 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {blocklistMsg && <p className="mt-3 text-meta text-go">{blocklistMsg}</p>}
+        {blocklistErr && <p className="mt-3 text-meta text-nogo">{blocklistErr}</p>}
+
+        <div className="mt-4 flex items-center gap-2">
+          <Button size="sm" onClick={saveBlocklistCard} disabled={savingBlocklist || !blocklistDirty}>
+            {savingBlocklist ? "저장 중…" : blocklistDirty ? "금칙어 저장" : "저장됨"}
+          </Button>
+          {blocklistDirty && (
             <span className="text-2xs text-pivot">저장하지 않은 변경이 있어요.</span>
           )}
         </div>

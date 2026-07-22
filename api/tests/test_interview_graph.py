@@ -13,7 +13,7 @@ from langgraph.types import Command
 from api.interview.graph import build_graph
 from api.interview.prompts import CoverageUpdate, ListenOut, ReflectOut
 from api.interview.state import init_ledger
-from api.schemas.models import GuideQuestion, InterviewGuide, Turn
+from api.schemas.models import GuideQuestion, InterviewGuide, Project, Turn
 
 GUIDE = InterviewGuide(
     project_id="p1", goal="배달앱 전환 요인",
@@ -27,6 +27,7 @@ class FakeStore:
     def __init__(self):
         self.turns: list[Turn] = []
         self.session_patches: list[dict] = []
+        self.blocklist: list[str] = []   # generate 노드가 읽는 지식팩 금칙어(F1.5)
 
     def list_turns(self, pid, sid):
         return list(self.turns)
@@ -37,6 +38,10 @@ class FakeStore:
 
     def update_session(self, pid, sid, patch):
         self.session_patches.append(patch)
+
+    def get_project(self, pid):
+        # generate 노드가 금칙어를 읽는다 — DB 없이 프로젝트 대역을 돌려준다
+        return Project(id=pid, topic="t", blocklist=list(self.blocklist))
 
 
 class FakeLLM:
@@ -67,6 +72,8 @@ def fakes(monkeypatch):
     fs = FakeStore()
     # T2 부터 listen 은 store 를 안 읽는다(상태 소유) — speak 만 기록용으로 쓴다
     monkeypatch.setattr(speak_mod, "store", fs)
+    # generate 는 지식팩 금칙어(F1.5)를 store.get_project 로 읽는다 — DB 없이 대역으로
+    monkeypatch.setattr(gen_mod, "store", fs)
     # guard 는 LLM 없이 동작하도록 고정 (재작성 경로는 가드레일 자체 테스트가 커버)
     monkeypatch.setattr(
         guard_mod.guardrail, "ensure_neutral",

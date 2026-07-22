@@ -49,6 +49,7 @@ def _project(r: ProjectRow, sessions: int = 0, completed: int = 0) -> Project:
         motivation=r.motivation, utilization=r.utilization,
         material_text=r.material_text, discord_webhook_url=r.discord_webhook_url,
         screener=[ScreenerQuestion(**q) for q in (r.screener or [])],
+        blocklist=list(r.blocklist or []),
         status=r.status, created_at=r.created_at,
         session_count=sessions, completed_count=completed,
     )
@@ -138,6 +139,7 @@ def create_project(p: Project) -> Project:
             material_text=p.material_text,
             discord_webhook_url=p.discord_webhook_url,
             screener=[q.model_dump() for q in p.screener],
+            blocklist=list(p.blocklist),
             status=p.status, created_at=p.created_at,
         ))
         s.commit()

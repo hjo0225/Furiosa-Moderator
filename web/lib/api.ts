@@ -25,6 +25,7 @@ export type Project = {
   utilization: string; // 활용 방안
   material_text: string; // 업로드한 참고 자료 (가이드 생성에 주입). 비어 있으면 미첨부.
   screener: ScreenerQuestion[]; // 참가 조건 스크리너(F4.3). 비면 게이트 없음. 의뢰자 응답에만 담긴다.
+  blocklist: string[]; // 지식팩 금칙어(F1.5). 진행자가 먼저 꺼내면 안 되는 주제·표현. 비면 제약 없음.
   status: ProjectStatus;
   created_at: string;
   session_count: number;
@@ -219,6 +220,13 @@ export const saveScreener = (pid: string, screener: ScreenerQuestion[]) =>
   request<Project>(`/api/projects/${pid}/screener`, {
     method: "PUT",
     body: JSON.stringify({ screener }),
+  });
+
+/** 지식팩 금칙어 저장 (F1.5). 빈/공백 항목은 서버가 버린다. 빈 배열이면 제약 해제. 갱신된 프로젝트를 돌려준다. */
+export const saveBlocklist = (pid: string, blocklist: string[]) =>
+  request<Project>(`/api/projects/${pid}/blocklist`, {
+    method: "PUT",
+    body: JSON.stringify({ blocklist }),
   });
 
 export const getDashboard = (pid: string) => request<Dashboard>(`/api/projects/${pid}/dashboard`);
