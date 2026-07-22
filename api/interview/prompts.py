@@ -28,7 +28,10 @@ class ListenOut(BaseModel):
     # --- 전략 (행동 7종) ---
     action: Literal["probe", "clarify", "challenge", "advance", "revisit", "redirect", "close"] = "advance"
     question_id: str = ""      # advance/revisit 의 대상 문항 (그 외 행동은 현 문항 유지)
-    probe_type: Literal["", "구체화", "심화"] = ""   # action=probe 일 때 래더링 단계
+    # action=probe 일 때 프로빙 유형 5종 (F5.1). "" 는 미지정.
+    probe_type: Literal["", "구체화", "심화", "예시요청", "대비", "결과추적", "감정원인"] = ""
+    # 응답자 피로 신호 감지 — true 면 strategize 가 더 캐묻지 않고 advance/close 로 강등 (F5.1)
+    fatigue: bool = False
     reason: str = ""           # 선택 이유 한 줄 — 타임트래블 디버깅 재료
 
 
@@ -36,15 +39,28 @@ ANALYST_SYSTEM = (
     "당신은 정성조사 인터뷰의 전략 분석가입니다. 응답자의 직전 답변을 분석하고, "
     "진행자가 취할 다음 행동 하나를 고릅니다. **질문 문장은 만들지 않습니다** — 분석과 행동 선택만.\n"
     "행동 7종:\n"
-    "- probe: 직전 답변 안으로 파고든다. 표면(무엇·어떤)에 머물면 probe_type=구체화(구체적 사례를 끌어냄), "
-    "구체적 사례가 이미 나왔으면 probe_type=심화(그 밑의 이유·동기·감정으로 내려감).\n"
+    "- probe: 직전 답변 안으로 파고든다. probe_type 으로 프로빙 유형을 고른다(아래 [프로빙 유형] 참고).\n"
     "- clarify: 답이 모호하거나 뭉개져서 무슨 뜻인지 확인이 필요할 때.\n"
     "- challenge: 앞선 발언과 모순될 때 — contradiction 에 모순 내용을 적고 부드럽게 확인.\n"
     "- advance: 지금 문항을 충분히 들었을 때 다음 문항으로 (question_id 에 다음 문항).\n"
     "- revisit: [답이 얕은 문항]이 있고 지금 문항이 소진됐을 때 되짚기 (question_id 에 그 문항).\n"
     "- redirect: 응답자가 주제를 벗어났을 때 복귀.\n"
     "- close: 남은 문항이 없고 충분히 들었을 때 마무리.\n"
-    "구체적 사례·감정·이유가 걸려 있는데 아직 캐묻지 않았다면 probe 가 기본값입니다."
+    "구체적 사례·감정·이유가 걸려 있는데 아직 캐묻지 않았다면 probe 가 기본값입니다.\n"
+    "\n[프로빙 유형] (action=probe 일 때 probe_type 에 하나):\n"
+    "- 구체화: 표면(무엇·어떤)에 머물 때 구체적 사례를 끌어냄.\n"
+    "- 심화: 사례가 나왔을 때 그 밑의 이유·동기·감정으로 한 단계 내려감.\n"
+    "- 예시요청: 일반론으로 말할 때 가장 최근의 실제 사례 하나를 청함.\n"
+    "- 대비: 대안·다른 선택지와 비교하게 함(왜 이것이고 저것이 아닌가).\n"
+    "- 결과추적: 그 상황에서 그래서 어떻게 했는지·무슨 일이 벌어졌는지 뒤를 좇음.\n"
+    "- 감정원인: 감정 표현이 나왔을 때 그 감정의 원인을 캐물음.\n"
+    "\n[버킷 적합도] 직전 답변이 지금 문항의 응답 버킷 중 하나에 명확히 들어가지 않으면"
+    "(경계에 걸치거나 어디에도 안 맞으면) 그것이 곧 probe 신호다. "
+    "버킷은 분류 라벨이자 프로빙 목표다 — 답을 특정 버킷으로 몰아가지 말고, 어느 버킷인지 "
+    "또렷해지도록 파고든다.\n"
+    "\n[피로 감지] 응답자 피로 신호(답변이 직전보다 급격히 짧아짐, '몰라요/글쎄요/그냥' 반복, "
+    "성의 없음)를 감지하면 fatigue=true 로 표시한다. 피로가 감지되면 더 캐묻지 말고 "
+    "advance 또는 close 를 고른다."
 )
 
 
@@ -73,16 +89,39 @@ def _ledger_blocks(guide: dict, ledger: dict) -> tuple[str, str]:
     return pending_block, thin_block
 
 
+def _bucket_block(guide: dict, current_qid: str) -> str:
+    """지금 문항의 응답 버킷을 label+정의로 나열 — 분석가가 버킷 적합도를 판단하는 재료.
+
+    버킷이 없거나 문항을 못 찾으면 빈 문자열(호출부가 블록을 생략)."""
+    if not current_qid:
+        return ""
+    q = _qmap(guide).get(current_qid)
+    if not q:
+        return ""
+    buckets = q.get("response_buckets") or []
+    if not buckets:
+        return ""
+    lines = []
+    for b in buckets:
+        label = b.get("label", "")
+        definition = b.get("definition", "")
+        lines.append(f"- {label}" + (f": {definition}" if definition else ""))
+    return "\n".join(lines)
+
+
 def analysis_user(
     guide: dict, messages: list, utterance: str, asked: int, probe_streak: int, ledger: dict,
-    pace_line: str = "",
+    pace_line: str = "", current_qid: str = "",
 ) -> str:
     pending_block, thin_block = _ledger_blocks(guide, ledger)
+    bucket_block = _bucket_block(guide, current_qid)
     return (
         f"[조사 목표]\n{guide.get('goal', '') or '(목표 미기재)'}\n\n"
         f"[지금까지 대화] (진행자 질문 {asked}회)\n{_convo(messages, utterance)}\n\n"
         f"[응답자의 직전 답변]\n{utterance or '(없음)'}\n\n"
-        "직전 답변을 앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
+        + (f"[지금 문항의 응답 버킷] (직전 답변이 어느 버킷에도 또렷이 안 들어가면 그 자체가 probe 신호)\n"
+           f"{bucket_block}\n\n" if bucket_block else "")
+        + "직전 답변을 앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
         "직전 답변에 당신이 모르는 용어·브랜드·고유명사가 있으면 unknown_terms 에 그대로 나열하세요"
         "(아는 척 금지 — 없으면 빈 배열).\n"
         + (f"{pace_line}\n" if pace_line else "")
@@ -117,6 +156,16 @@ _GEN_DIRECTIVES = {
     "redirect": "응답자가 주제를 벗어났습니다. 답변을 존중하면서 부드럽게 원래 주제로 돌아오세요.",
 }
 
+# 프로빙 유형 5종(+구체화·심화 합쳐 6) 각각의 한 줄 지시 — ANALYST_SYSTEM 의 뜻과 일치 (F5.1)
+_PROBE_DIRECTIVES = {
+    "구체화": "구체적 사례·상황을 끌어내세요.",
+    "심화": "이유·동기·감정으로 한 단계 내려가세요.",
+    "예시요청": "가장 최근의 실제 사례 하나를 들어달라고 청하세요.",
+    "대비": "대안·다른 선택지와 비교해 왜 이것이었는지 물으세요.",
+    "결과추적": "그래서 그다음 어떻게 했는지·무슨 일이 벌어졌는지 뒤를 좇으세요.",
+    "감정원인": "방금 드러난 감정의 원인이 무엇인지 물으세요.",
+}
+
 
 def generate_user(
     action: str, question_id: str, probe_type: str, contradiction: str,
@@ -131,10 +180,8 @@ def generate_user(
         f"[지금까지 대화]\n{_convo(messages, '') or '(시작 전)'}",
         f"[당신이 방금 정한 행동] {action} — {_GEN_DIRECTIVES.get(action, _GEN_DIRECTIVES['advance'])}",
     ]
-    if action == "probe" and probe_type:
-        parts.append(f"[래더링 단계] {probe_type} — "
-                     + ("구체적 사례·상황을 끌어내세요." if probe_type == "구체화"
-                        else "이유·동기·감정으로 한 단계 내려가세요."))
+    if action == "probe" and probe_type in _PROBE_DIRECTIVES:
+        parts.append(f"[프로빙 유형] {probe_type} — {_PROBE_DIRECTIVES[probe_type]}")
     if action == "challenge" and contradiction:
         parts.append(f"[확인할 모순]\n{contradiction}")
     if action in ("advance", "revisit") and question_id in qs:
