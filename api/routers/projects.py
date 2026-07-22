@@ -26,9 +26,11 @@ from ..schemas.models import (
     GuideQuestion,
     Insight,
     InterviewGuide,
+    Material,
     Project,
     ProjectCreateIn,
     WebhookSetIn,
+    WebSelectIn,
 )
 from ..services import store
 from ..services import research
@@ -159,6 +161,32 @@ def research_candidates(pid: str) -> dict:
         {"angle": c.angle, "title": c.title, "url": c.url, "snippet": c.snippet}
         for c in cands
     ]}
+
+
+@router.post("/{pid}/materials/web")
+def add_web_materials(pid: str, body: WebSelectIn) -> dict:
+    """선택 후보 크롤 → materials 저장 → RAG 재인덱싱·슬롯 요약 재계산."""
+    _require(pid)
+    urls = [c.url for c in body.selected]
+    if not urls:
+        raise HTTPException(400, "선택된 자료가 없습니다.")
+    try:
+        bodies = research.crawl(urls)
+    except research.ResearchError as e:
+        raise HTTPException(502, f"본문 수집에 실패했습니다: {e}") from e
+    stored = 0
+    for c in body.selected:
+        text = bodies.get(c.url, "")
+        if not text.strip():
+            continue                        # 크롤 실패분 스킵
+        store.create_material(Material(
+            project_id=pid, source="web", angle=c.angle,
+            url=c.url, title=c.title or c.url, text=text,
+        ))
+        stored += 1
+    briefing_pipeline.refresh_project(pid)
+    failed = [c.url for c in body.selected if not bodies.get(c.url, "").strip()]
+    return {"stored": stored, "failed": failed}
 
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB

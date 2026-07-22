@@ -47,6 +47,16 @@ class Material(BaseModel):
     created_at: datetime = Field(default_factory=_now)
 
 
+class WebCandidate(BaseModel):
+    angle: Angle
+    title: str = ""
+    url: str
+
+
+class WebSelectIn(BaseModel):
+    selected: list[WebCandidate] = Field(default_factory=list)
+
+
 class GuideQuestion(BaseModel):
     id: str
     text: str
