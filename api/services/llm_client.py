@@ -79,6 +79,8 @@ class LLMClient:
         self.embed_model = s.embed_model
         self.embed_api_key = (s.embed_api_key or "").lstrip("﻿").strip()
         self._embed_cli = None
+        self.rerank_model = s.rerank_model
+        self.rerank_api_key = (s.rerank_api_key or "").lstrip("﻿").strip()
 
     def _client(self):
         if self._cli is None:
@@ -160,6 +162,42 @@ class LLMClient:
         data = sorted(resp.data, key=lambda d: d.index)
         u = resp.usage
         return [d.embedding for d in data], Usage(m, getattr(u, "prompt_tokens", 0) if u else 0, 0)
+
+    # --- 리랭크 --------------------------------------------------------------
+
+    def rerank(self, query: str, documents: list[str], *, top_n: int = 3,
+               model: str | None = None) -> list[tuple[int, float]]:
+        """/v1/rerank 호출 — [(원본 index, relevance_score)] 를 점수 내림차순으로 반환.
+
+        OpenAI SDK 에 rerank 가 없어 REST 를 httpx 로 직접 부른다(research._run_actor 관례).
+        documents 가 비면 호출 없이 []. HTTP 실패는 max_retries 재시도 후 LLMError.
+        """
+        if not documents:
+            return []
+        import httpx
+
+        m = model or self.rerank_model
+        last: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/rerank",
+                    headers={"Authorization": f"Bearer {self.rerank_api_key}"},
+                    json={"model": m, "query": query, "documents": documents, "top_n": top_n},
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                break
+            except httpx.HTTPError as e:
+                last = e
+                time.sleep(0.5 * (attempt + 1))
+        else:
+            raise LLMError(f"리랭크 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
+        results = resp.json()["results"]
+        return sorted(
+            ((item["index"], item["relevance_score"]) for item in results),
+            key=lambda t: t[1], reverse=True,
+        )
 
     # --- 텍스트 --------------------------------------------------------------
 
