@@ -159,6 +159,23 @@ class BriefingChunkRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class KnowledgeChunkRow(Base):
+    """글로벌 지식 풀 — 프로젝트에 매이지 않는 사전 임베딩 코퍼스(예: 합성 페르소나).
+
+    briefing_chunks 와 달리 project_id 가 없다(전역). corpus 로 데이터셋을 나누고,
+    meta(JSONB)로 하드필터(age·sex·province…)를 건다. 검색은 pipeline.search_knowledge.
+    """
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    corpus: Mapped[str] = mapped_column(String(32), index=True)   # 데이터셋 구분 (예: 'personas')
+    title: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text)                        # 리랭커가 읽는 본문
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict)        # 하드필터 재료 (age, sex, province…)
+    embedding = mapped_column(Vector(1024))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class MaterialRow(Base):
     __tablename__ = "materials"
 
