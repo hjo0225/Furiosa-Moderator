@@ -8,13 +8,12 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, UploadFile
 
 from ..briefing import pipeline as briefing_pipeline
-from ..services.material import SUMMARIZE_THRESHOLD, MaterialError, cap, extract_text
+from ..services.material import MaterialError, compose_guide_material, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
-from ..prompts.material import MATERIAL_SUMMARY_SYSTEM, material_summary_user
 from ..prompts.insight import (
     INSIGHT_SYSTEM,
     SESSION_SUMMARY_SYSTEM,
@@ -128,10 +127,11 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     p = _require(pid)
     topic = body.topic.strip() or p.topic
     target = body.target.strip() or p.target
+    material = compose_guide_material(store.get_slot_summaries(pid))
     try:
         guide, _ = get_llm().structured(
             GUIDE_SYSTEM,
-            guide_user(topic, target, p.material_text, p.motivation, p.utilization),
+            guide_user(topic, target, material, p.motivation, p.utilization),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
             max_tokens=2000,
         )
@@ -193,14 +193,11 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("/{pid}/material")
-async def upload_material(pid: str, file: UploadFile) -> dict:
-    """C-2 보조: 도메인 자료 업로드 → 가이드 생성 프롬프트에 주입(선택 스텝).
-
-    자료가 SUMMARIZE_THRESHOLD 를 넘으면 자르는 대신 LLM 으로 요약해 저장한다
-    (자르면 뒷부분 도메인 맥락이 통째로 사라지므로). 요약이 실패해도 업로드는 죽지 않고
-    cap() 자르기로 후퇴한다.
-    """
+async def upload_material(pid: str, file: UploadFile, angle: str = Form(...)) -> dict:
+    """수동 업로드 → materials 풀에 저장(유저가 슬롯 지정). RAG 재인덱싱·요약."""
     _require(pid)
+    if angle not in ("현상", "원인", "활용"):
+        raise HTTPException(400, "슬롯(angle)은 현상·원인·활용 중 하나여야 합니다.")
     raw = await file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
         raise HTTPException(400, "파일이 너무 큽니다(최대 10MB).")
@@ -208,21 +205,33 @@ async def upload_material(pid: str, file: UploadFile) -> dict:
         text = extract_text(file.filename or "", raw)
     except MaterialError as e:
         raise HTTPException(400, str(e)) from e
+    if not text.strip():
+        raise HTTPException(400, "자료에서 텍스트를 추출하지 못했습니다(스캔 PDF 등).")
+    store.create_material(Material(
+        project_id=pid, source="upload", angle=angle,
+        title=file.filename or "업로드", text=text,
+    ))
+    briefing_pipeline.refresh_project(pid)
+    return {"project_id": pid, "chars": len(text), "angle": angle}
 
-    summarized = False
-    if len(text) > SUMMARIZE_THRESHOLD:
-        try:
-            text, _ = get_llm().text(
-                MATERIAL_SUMMARY_SYSTEM, material_summary_user(text), max_tokens=2048
-            )
-            summarized = True
-        except LLMError as e:
-            log.warning("자료 요약 실패, 자르기로 후퇴 (project=%s): %s", pid, e)
 
-    # 요약을 건너뛰었거나 요약본이 여전히 길 경우의 최종 상한.
-    text, truncated = cap(text)
-    store.update_project(pid, {"material_text": text})
-    return {"project_id": pid, "chars": len(text), "truncated": truncated, "summarized": summarized}
+@router.get("/{pid}/materials")
+def list_project_materials(pid: str) -> list[dict]:
+    """현재 자료 풀 목록(폼 재방문 표시용). 본문(text)은 제외."""
+    _require(pid)
+    return [
+        {"id": m.id, "source": m.source, "angle": m.angle, "title": m.title, "url": m.url}
+        for m in store.list_materials(pid)
+    ]
+
+
+@router.delete("/{pid}/materials/{mid}")
+def remove_material(pid: str, mid: str) -> dict:
+    """자료 풀에서 삭제 → RAG 재인덱싱·요약 재계산."""
+    _require(pid)
+    store.delete_material(pid, mid)
+    briefing_pipeline.refresh_project(pid)
+    return {"deleted": mid}
 
 
 @router.get("/{pid}/guide", response_model=InterviewGuide)
