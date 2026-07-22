@@ -62,12 +62,18 @@ def search(slot_queries: dict[str, list[str]]) -> list[Candidate]:
         "languageCode": "ko",
     })
 
-    first_slot = next(iter(slot_queries), "현상")
-    out: list[Candidate] = []
-    seen: set[str] = set()
+    by_term: dict[str, dict] = {}
     for i, item in enumerate(items):
         term = (item.get("searchQuery") or {}).get("term") or (ordered[i] if i < len(ordered) else "")
-        angle = q_angle.get(term, first_slot)
+        by_term.setdefault(term, item)
+
+    out: list[Candidate] = []
+    seen: set[str] = set()
+    for q in ordered:
+        item = by_term.get(q)
+        if not item:
+            continue
+        angle = q_angle[q]
         for res in (item.get("organicResults") or []):
             url = res.get("url") or ""
             if not url or url in seen:
