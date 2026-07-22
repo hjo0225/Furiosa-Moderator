@@ -105,6 +105,9 @@ export type SpeechVoice = { name: string; label: string };
 /** 화면에 그대로 그리는 대화 한 줄 — 서버 Turn 의 표시용 축약본. */
 export type TranscriptTurn = { role: TurnRole; text: string; emotion?: string };
 
+/** 질문에 붙는 제시 자료(시안·광고·컨셉). Phase 1은 UI만 — 아직 API가 내려주지 않는다. */
+export type Stimulus = { type: "image" | "video"; url: string; caption?: string };
+
 // --- 코어 -------------------------------------------------------------------
 
 export class ApiError extends Error {
