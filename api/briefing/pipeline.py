@@ -82,3 +82,24 @@ def search_chunks(pid: str, query: str, k: int = 3) -> list[dict]:
         ).all()
     return [{"text": r.BriefingChunkRow.text, "source": r.BriefingChunkRow.source,
              "score": 1.0 - float(r.d)} for r in rows]
+
+
+def refresh_project(pid: str) -> None:
+    """자료 변경 후 후처리 — RAG 재인덱싱 + 슬롯별 요약 재계산·저장.
+
+    요약 LLM 이 실패해도 인덱싱은 이미 끝났으므로 그 슬롯 요약만 비운다(인터뷰 RAG 는 산다).
+    """
+    from ..services.material import summarize_slot
+    from ..services.store import list_materials, save_slot_summary
+
+    index_project(pid)
+    by_angle: dict[str, list[str]] = {}
+    for m in list_materials(pid):
+        by_angle.setdefault(m.angle, []).append(m.text)
+    for angle in ("현상", "원인", "활용"):
+        try:
+            summary = summarize_slot(by_angle.get(angle, []))
+        except Exception as e:  # noqa: BLE001 — 요약 실패가 수집을 죽이지 않게
+            log.warning("슬롯 요약 실패 (project=%s, angle=%s): %s", pid, angle, e)
+            summary = ""
+        save_slot_summary(pid, angle, summary)
