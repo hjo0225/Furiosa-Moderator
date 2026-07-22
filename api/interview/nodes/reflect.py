@@ -50,14 +50,21 @@ def reflect_ledger(state: InterviewState) -> dict:
 
 
 def reflect_emotion(state: InterviewState) -> dict:
-    """감정 태깅 이사 (M-3) — 다음 질문 생성에 미사용이므로 슬로우패스가 제자리."""
+    """감정 태깅 + 응답자 턴의 문항 귀속 (M-3). 다음 질문 생성에 미사용이라 슬로우패스가 제자리.
+
+    응답자 턴은 원래 question_id 가 비어 저장된다 — 그러면 버킷 분포(F6.4)와 문항별 요약(F6.3)이
+    문항으로 뭉치지 못한다. 항상 도는 이 노드가 answered_qid(방금 답한 문항)를 턴에 귀속시키는 단일 지점.
+    """
     utterance = state.get("utterance", "")
     turn_id = state.get("resp_turn_id", "")
     if not utterance or not turn_id:
         return {}
     emotion, conf = tag_emotion(utterance)   # 실패 시 ("중립", 0.0) — 내부에서 처리
-    store.update_turn(state["project_id"], state["session_id"], turn_id,
-                      {"emotion": emotion, "emotion_confidence": conf})
+    patch = {"emotion": emotion, "emotion_confidence": conf}
+    qid = state.get("answered_qid", "")
+    if qid:
+        patch["question_id"] = qid   # 분포·문항별 요약 귀속 (응답자 턴엔 원래 안 붙는다)
+    store.update_turn(state["project_id"], state["session_id"], turn_id, patch)
     return {}
 
 
