@@ -39,6 +39,7 @@ from ..schemas.models import (
 )
 from ..services import store
 from ..services import research
+from ..services import evals
 from ..services.llm_client import LLMError, get_llm
 
 log = logging.getLogger(__name__)
@@ -200,6 +201,23 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
         q.id = q.id or f"q{i + 1}"
         _normalize_buckets(q)
     guide.goal = guide.goal or topic
+
+    # 비차단 품질 로그 (F8) — 매 생성마다 유도신문·버킷 MECE 를 오프라인 규칙으로 자기평가한다.
+    # 로그 전용이다: 반환 가이드를 바꾸지 않고, eval 이 던져도 생성을 막지 않는다.
+    try:
+        report = evals.guide_quality_report(guide)
+        if report["n_leading"] or report["bucket_warnings"]:
+            log.warning(
+                "guide quality: project=%s n_questions=%d n_leading=%d leading=%s bucket_warnings=%s",
+                pid,
+                report["n_questions"],
+                report["n_leading"],
+                report["leading"],
+                report["bucket_warnings"],
+            )
+    except Exception:  # noqa: BLE001 — 품질 로그가 가이드 생성을 막아선 안 된다
+        log.warning("guide quality eval 실패", exc_info=True)
+
     return store.save_guide(pid, guide)
 
 
