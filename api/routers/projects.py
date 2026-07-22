@@ -31,6 +31,7 @@ from ..schemas.models import (
     WebhookSetIn,
 )
 from ..services import store
+from ..services import research
 from ..services.llm_client import LLMError, get_llm
 
 log = logging.getLogger(__name__)
@@ -143,6 +144,21 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
         q.id = q.id or f"q{i + 1}"
     guide.goal = guide.goal or topic
     return store.save_guide(pid, guide)
+
+
+@router.post("/{pid}/research")
+def research_candidates(pid: str) -> dict:
+    """웹 리서치 — 브리프로 검색어 생성 → SERP 후보 반환(크롤 전·미저장)."""
+    p = _require(pid)
+    slot_queries = research.research_queries(p.topic, p.target, p.motivation, p.utilization)
+    try:
+        cands = research.search(slot_queries)
+    except research.ResearchError as e:
+        raise HTTPException(502, f"웹 검색에 실패했습니다: {e}") from e
+    return {"candidates": [
+        {"angle": c.angle, "title": c.title, "url": c.url, "snippet": c.snippet}
+        for c in cands
+    ]}
 
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
