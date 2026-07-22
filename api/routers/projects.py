@@ -138,9 +138,17 @@ def _normalize_buckets(q: GuideQuestion) -> None:
     for i, b in enumerate(q.response_buckets):
         b.id = b.id or f"{q.id}_b{i + 1}"
     if not any(b.is_catchall for b in q.response_buckets):
-        q.response_buckets.append(
-            ResponseBucket(id=f"{q.id}_other", label="기타", is_catchall=True)
+        # LLM 이 캐치올 표시 없이 '기타' 류를 만든 경우: 중복 추가 대신 그걸 캐치올로 승격
+        catchall_labels = {"기타", "그 외", "기타/모름", "해당 없음", "없음"}
+        existing = next(
+            (b for b in q.response_buckets if b.label.strip() in catchall_labels), None
         )
+        if existing:
+            existing.is_catchall = True
+        else:
+            q.response_buckets.append(
+                ResponseBucket(id=f"{q.id}_other", label="기타", is_catchall=True)
+            )
 
 
 @router.post("/{pid}/guide", response_model=InterviewGuide)

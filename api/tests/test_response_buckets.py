@@ -61,3 +61,15 @@ def test_normalize_empty_noop():
     q = GuideQuestion(id="q4", text="t")
     _normalize_buckets(q)
     assert q.response_buckets == []   # 버킷 없으면 강제로 만들지 않음
+
+
+def test_normalize_promotes_existing_gita_to_catchall():
+    # LLM 이 캐치올 표시 없이 '기타' 를 만든 경우 중복 추가 대신 승격
+    q = GuideQuestion(id="q5", text="t", response_buckets=[
+        ResponseBucket(label="A", definition="a"),
+        ResponseBucket(label="기타", definition=""),
+    ])
+    _normalize_buckets(q)
+    labels = [b.label for b in q.response_buckets]
+    assert labels.count("기타") == 1              # 중복 '기타' 없음
+    assert q.response_buckets[-1].is_catchall     # 기존 기타가 캐치올로 승격됨

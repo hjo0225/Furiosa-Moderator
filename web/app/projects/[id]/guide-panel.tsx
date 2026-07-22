@@ -302,13 +302,13 @@ export function GuidePanel({
                             value={b.label}
                             onChange={(e) => updateBucket(i, bi, "label", e.target.value)}
                             placeholder="버킷 이름"
-                            className={cn(inputCls, "text-meta")}
+                            className={cn(inputCls, "text-meta min-w-0 flex-1")}
                           />
                           <input
                             value={b.definition}
                             onChange={(e) => updateBucket(i, bi, "definition", e.target.value)}
                             placeholder="1문장 정의"
-                            className={cn(inputCls, "text-meta flex-[2]")}
+                            className={cn(inputCls, "text-meta min-w-0 flex-[2]")}
                           />
                           <button
                             type="button"
