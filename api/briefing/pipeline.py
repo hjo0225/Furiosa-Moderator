@@ -70,18 +70,34 @@ def index_project(pid: str) -> int:
     return len(rows)
 
 
-def search_chunks(pid: str, query: str, k: int = 3) -> list[dict]:
-    """코사인 top-k — v1은 임베딩만(리랭커는 §8 확인 후)."""
+def search_chunks(pid: str, query: str, k: int = 3, *,
+                  angle: str | None = None, candidates: int = 30) -> list[dict]:
+    """2단 검색 — 코사인으로 candidates 개 넓게 뽑고 리랭커로 top-k 재정렬.
+
+    angle 이 주어지면 그 슬롯으로 하드필터(WHERE). 리랭커 실패(LLMError)면 코사인
+    순서 그대로 top-k 반환(best-effort — 검색이 리랭커 장애로 죽지 않게).
+    """
     qv = embed_texts([query])[0]
     with db_session() as s:
         dist = BriefingChunkRow.embedding.cosine_distance(qv)
-        rows = s.execute(
-            select(BriefingChunkRow, dist.label("d"))
-            .where(BriefingChunkRow.project_id == pid)
-            .order_by(dist).limit(k)
-        ).all()
-    return [{"text": r.BriefingChunkRow.text, "source": r.BriefingChunkRow.source,
-             "score": 1.0 - float(r.d)} for r in rows]
+        stmt = (select(BriefingChunkRow, dist.label("d"))
+                .where(BriefingChunkRow.project_id == pid))
+        if angle:
+            stmt = stmt.where(BriefingChunkRow.angle == angle)
+        rows = s.execute(stmt.order_by(dist).limit(candidates)).all()
+    cands = [{"text": r.BriefingChunkRow.text, "source": r.BriefingChunkRow.source,
+              "score": 1.0 - float(r.d)} for r in rows]
+    if len(cands) <= k:
+        return cands[:k]                       # 재정렬할 게 없으면 리랭커 호출 자체를 아낀다
+    # 로컬 임포트 — 순환 임포트 위험 회피(레포 관례).
+    from ..services.llm_client import LLMError, get_llm
+
+    try:
+        ranked = get_llm().rerank(query, [c["text"] for c in cands], top_n=k)
+    except LLMError as e:  # 리랭커 장애가 검색을 죽이지 않게 — 코사인 순서로 폴백
+        log.warning("리랭크 실패, 코사인 순서로 폴백 (project=%s): %s", pid, e)
+        return cands[:k]
+    return [{**cands[i], "score": score} for i, score in ranked]
 
 
 def refresh_project(pid: str) -> None:
