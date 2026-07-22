@@ -58,8 +58,8 @@ export function RespondentView({ projectId }: { projectId: string }) {
     <>
       <InAppBridge />
       <main
-        className={`mx-auto min-h-screen w-full px-4 py-8 sm:px-6 sm:py-12 ${
-          stage === "interview" ? "max-w-3xl" : "max-w-lg"
+        className={`mx-auto min-h-screen w-full px-4 py-8 sm:px-6 sm:py-14 ${
+          stage === "interview" ? "max-w-3xl" : "max-w-xl"
         }`}
       >
         {loadError ? (
@@ -140,19 +140,18 @@ export function RespondentView({ projectId }: { projectId: string }) {
               size="lg"
               onClick={begin}
               disabled={!agreed || starting}
-              className="mt-5 w-full"
+              className="mt-6 w-full sm:w-auto"
             >
               {starting ? "준비 중…" : "동의하고 인터뷰 시작"}
             </Button>
             {!agreed && (
-              <p className="mt-2 text-center text-2xs text-ink-faint">
+              <p className="mt-2 text-2xs text-ink-faint">
                 동의해 주셔야 인터뷰를 시작할 수 있어요.
               </p>
             )}
           </section>
         ) : stage === "interview" && session ? (
           <section>
-            <h1 className="mb-4 text-lead font-medium">{project.title || project.topic}</h1>
             <InterviewFlow
               projectId={projectId}
               sessionId={session.id}
@@ -164,14 +163,11 @@ export function RespondentView({ projectId }: { projectId: string }) {
           </section>
         ) : (
           /* R-4 완료 */
-          <section className="rounded-xl bg-surface p-8 text-center shadow-card ring-1 ring-line">
-            <p className="text-3xl" aria-hidden>
-              ✅
-            </p>
+          <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
+            <p className="text-3xl" aria-hidden>✅</p>
             <h1 className="mt-4 text-title">제출됐어요</h1>
             <p className="mt-3 text-base leading-relaxed text-ink-soft">
-              시간 내어 답변해 주셔서 감사합니다.
-              {turnCount > 0 && ` 총 ${turnCount}개의 답변을 남겨주셨어요.`}
+              시간 내어 답변해 주셔서 감사합니다.{turnCount > 0 && ` 총 ${turnCount}개의 답변을 남겨주셨어요.`}
             </p>
             <p className="mt-4 text-meta leading-relaxed text-ink-faint">
               답변은 익명으로 저장되었고, {RETENTION} 보관 후 파기됩니다. 이제 창을 닫으셔도 좋아요.

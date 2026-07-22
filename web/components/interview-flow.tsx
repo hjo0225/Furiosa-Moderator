@@ -11,10 +11,10 @@
 // (자동재생 권한 확보 + 아바타 진폭).
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ModeratorAvatar } from "@/components/moderator-avatar";
+import { InterviewStimulus } from "@/components/interview-stimulus";
 import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
-import { sendTurn, submitSession, transcribeAudio } from "@/lib/api";
+import { sendTurn, submitSession, transcribeAudio, type Stimulus } from "@/lib/api";
 import { initialVoiceInput, reduceVoiceInput, type VoiceInputState } from "@/lib/voice-input";
 import { cn } from "@/lib/utils";
 
@@ -38,12 +38,14 @@ export function InterviewFlow({
   sessionId,
   locale = "ko",
   en = false,
+  stimulus,
   onComplete,
 }: {
   projectId: string;
   sessionId: string;
   locale?: string;
   en?: boolean;
+  stimulus?: Stimulus; // Phase 1: 항상 undefined. 주어지면 2분할로 렌더.
   onComplete: (answerCount: number) => void;
 }) {
   const tts = useTts(locale);
@@ -54,6 +56,7 @@ export function InterviewFlow({
   const [error, setError] = useState<string | null>(null);
   const [voiceInput, setVoiceInput] = useState<VoiceInputState>(initialVoiceInput);
   const [answerCount, setAnswerCount] = useState(0);
+  const [mainQ, setMainQ] = useState(0); // 프로빙 제외 '본 질문' 번호 (PRD F5.3: 프로빙은 진행률 미반영)
   const [voiceFilled, setVoiceFilled] = useState(false); // 방금 답변이 음성 전사에서 왔나(확인 안내용)
   const [submitting, setSubmitting] = useState(false);
   const started = useRef(false);
@@ -71,6 +74,7 @@ export function InterviewFlow({
       try {
         const out = await sendTurn(projectId, sessionId, text, en ? "en" : "ko");
         const msg = (out.message ?? "").trim();
+        if (msg && !out.done && !out.is_probe) setMainQ((n) => n + 1); // 오프닝·본 질문만 카운트, 프로빙 제외
         if (text) setAnswerCount((n) => n + 1); // 방금 전달된 답변을 센다(성공 시에만)
         setInput("");
         setVoiceFilled(false);
@@ -179,14 +183,12 @@ export function InterviewFlow({
   // --- 시작 전 화면 --------------------------------------------------------
   if (phase === "idle") {
     return (
-      <Card className="flex min-h-[26rem] flex-col items-center justify-center gap-5 p-8 text-center">
-        <div className="w-32">
-          <ModeratorAvatar speaking={false} getLevel={tts.getLevel} />
-        </div>
+      <Card className="mx-auto flex min-h-[24rem] w-full max-w-2xl flex-col items-center justify-center gap-6 p-8 text-center sm:p-10">
+        <p className="eyebrow">{en ? "Voice interview" : "음성 인터뷰"}</p>
         <p className="max-w-md text-lead leading-relaxed text-ink-soft">
           {en
             ? "A moderator will guide the interview by voice. Answer by speaking or typing, then press Next."
-            : "진행자가 음성으로 질문을 드립니다. 말하거나 입력해 답한 뒤 '다음'을 눌러 주세요."}
+            : "진행자가 음성으로 질문을 드립니다. 말하거나 입력해 답한 뒤 ‘다음’을 눌러 주세요."}
         </p>
         <Button type="button" size="lg" onClick={begin}>
           {en ? "Start interview" : "인터뷰 시작"}
@@ -201,20 +203,37 @@ export function InterviewFlow({
     );
   }
 
-  // --- 인터뷰 화면 (아바타 | 카드) -----------------------------------------
+  // --- 인터뷰 화면 (센터 컬럼) ---------------------------------------------
+  const qaProps = {
+    en, busy, question, tts, phase, input, setInput, goNext,
+    toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error,
+  };
   return (
-    <Card className="grid gap-5 p-5 sm:p-6 md:grid-cols-[minmax(0,13rem)_1fr] md:items-center">
-      {/* 왼쪽 — 진행자 아바타 */}
-      <div className="flex flex-col items-center gap-3">
-        <ModeratorAvatar speaking={tts.speaking} getLevel={tts.getLevel} />
-        <p className="font-mono text-2xs uppercase text-accent">🎙 {en ? "Moderator" : "진행자"}</p>
+    <Card className="mx-auto w-full max-w-2xl overflow-hidden p-0">
+      {/* 상단 — 진행률 (프로빙 미반영) */}
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
+        <p className="font-mono text-2xs uppercase tracking-wider text-ink-faint">
+          🎙 {en ? "Moderator" : "진행자"}
+        </p>
+        {phase !== "review" && phase !== "done" && mainQ > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-2xs font-medium text-ink-faint">
+              {en ? `Question ${mainQ}` : `질문 ${mainQ}`}
+            </span>
+            <span className="h-1 w-24 overflow-hidden rounded-full bg-line">
+              <span
+                className="block h-full rounded-full bg-accent-solid transition-[width] duration-500"
+                style={{ width: `${Math.min(90, mainQ * 14)}%` }}
+              />
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* 오른쪽 — 질문 + 답변 */}
-      <div className="flex min-h-[20rem] flex-col">
+      <div className="flex min-h-[22rem] flex-col p-5 sm:p-8">
         {phase === "review" || phase === "done" ? (
-          <div className="flex flex-1 flex-col justify-center gap-3 text-center">
-            <p className="text-2xl leading-relaxed text-ink">{question}</p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <p className="text-title text-ink">{question}</p>
             {phase === "done" ? (
               <p className="text-meta text-ink-soft">{en ? "Submitted. Thank you!" : "제출됐어요. 감사합니다!"}</p>
             ) : (
@@ -224,119 +243,128 @@ export function InterviewFlow({
                     ? "That's the end of the interview. Submit to send your answers."
                     : "인터뷰가 끝났어요. 제출해야 답변이 전달됩니다."}
                 </p>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={() => void submit()}
-                  disabled={submitting}
-                  className="self-center"
-                >
+                <Button type="button" size="lg" onClick={() => void submit()} disabled={submitting}>
                   {submitting ? (en ? "Submitting…" : "제출 중…") : en ? "Submit answers" : "답변 제출하기"}
                 </Button>
                 <p className="text-2xs text-ink-faint">
-                  {en
-                    ? "Your answers are only counted once submitted."
-                    : "제출하지 않고 창을 닫으면 답변이 집계되지 않아요."}
+                  {en ? "Your answers are only counted once submitted." : "제출하지 않고 창을 닫으면 답변이 집계되지 않아요."}
                 </p>
                 {error && <p className="text-meta text-nogo">{error}</p>}
               </>
             )}
           </div>
+        ) : stimulus ? (
+          // 자극물 모드 — 2분할(방향 3): 왼쪽 자극물, 오른쪽 질문+답변
+          <div className="grid flex-1 gap-5 md:grid-cols-[1.4fr_1fr]">
+            <div className="min-h-[16rem] md:min-h-0">
+              <InterviewStimulus stimulus={stimulus} />
+            </div>
+            <div className="flex min-h-0 flex-col md:border-l md:border-line md:pl-6">
+              <QuestionAndAnswer {...qaProps} />
+            </div>
+          </div>
         ) : (
-          <>
-            {/* 질문 */}
-            <div className="flex items-start gap-2">
-              <p className="flex-1 text-2xl leading-relaxed text-ink">
-                {busy ? (
-                  <span className="animate-pulse text-ink-faint">
-                    {en ? "Moderator is thinking…" : "진행자가 다음 질문을 준비 중…"}
-                  </span>
-                ) : (
-                  question
-                )}
-              </p>
-              {!busy && tts.available && question && (
-                <button
-                  type="button"
-                  onClick={() => void tts.speak(question)}
-                  className="shrink-0 text-2xs text-accent underline"
-                >
-                  {en ? "Replay" : "다시 듣기"}
-                </button>
-              )}
-            </div>
-
-            {/* 답변 */}
-            <div className="mt-auto pt-5">
-              {voiceFilled && canType && (
-                <p className="mb-2 text-2xs text-ink-faint">
-                  {en
-                    ? "Here's what we heard — edit it or re-record, then press Next."
-                    : "이렇게 들었어요 — 고치거나 다시 녹음한 뒤 '다음'을 눌러 주세요."}
-                </p>
-              )}
-              {voiceInput.mode === "text" && recorder.supported && (
-                <p className="mb-2 text-2xs text-ink-faint">
-                  {en
-                    ? "Switched to typing. The mic still works if you want to try again."
-                    : "키보드 입력으로 전환했어요. 마이크는 계속 쓸 수 있어요."}
-                </p>
-              )}
-              {phase === "recording" && (
-                <p className="mb-2 text-meta text-nogo">
-                  ● {en ? "Recording" : "녹음 중"} {recorder.elapsedSec}s
-                </p>
-              )}
-              {phase === "transcribing" && (
-                <p className="mb-2 text-meta text-ink-faint">{en ? "Transcribing…" : "음성 인식 중…"}</p>
-              )}
-              {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
-
-              <div className="flex items-end gap-2">
-                {recorder.supported && (
-                  <button
-                    type="button"
-                    onClick={() => void toggleRecord()}
-                    disabled={busy || phase === "transcribing"}
-                    aria-label={en ? "Record answer" : "음성으로 답하기"}
-                    className={cn(
-                      "shrink-0 rounded-full px-3 py-2 text-meta font-medium transition-colors disabled:opacity-40",
-                      phase === "recording"
-                        ? "bg-nogo/10 text-nogo"
-                        : "bg-bg text-ink-soft ring-1 ring-line hover:bg-accent-wash",
-                    )}
-                  >
-                    {phase === "recording" ? (en ? "■ Stop" : "■ 정지") : "🎤"}
-                  </button>
-                )}
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    // IME 조합 중(한국어 확정)의 Enter 는 전송하지 않는다.
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      goNext();
-                    }
-                  }}
-                  rows={3}
-                  disabled={!canType}
-                  placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
-                  className={fieldClass("flex-1 resize-none text-lead")}
-                />
-                <button
-                  type="button"
-                  onClick={goNext}
-                  disabled={!canNext}
-                  className="shrink-0 rounded-lg bg-accent-solid px-4 py-2 text-base font-medium text-accent-on disabled:opacity-40"
-                >
-                  {en ? "Next" : "다음"}
-                </button>
-              </div>
-            </div>
-          </>
+          // 기본 — 센터 컬럼(방향 1)
+          <div className="mx-auto flex w-full max-w-xl flex-1 flex-col">
+            <QuestionAndAnswer {...qaProps} />
+          </div>
         )}
       </div>
     </Card>
+  );
+}
+
+function QuestionAndAnswer(p: {
+  en: boolean; busy: boolean; question: string; tts: ReturnType<typeof useTts>;
+  phase: Phase; input: string; setInput: (v: string) => void; goNext: () => void;
+  toggleRecord: () => void; recorder: ReturnType<typeof useRecorder>;
+  voiceFilled: boolean; voiceInput: VoiceInputState; canType: boolean; canNext: boolean;
+  error: string | null;
+}) {
+  const { en, busy, question, tts, phase, input, setInput, goNext, toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error } = p;
+  return (
+    <>
+      {/* 질문 — 화면의 주인공 */}
+      <div className="flex items-start gap-3">
+        <p className="flex-1 text-[1.6rem] font-medium leading-snug tracking-tight text-ink [text-wrap:balance]">
+          {busy ? (
+            <span className="animate-pulse text-ink-faint">
+              {en ? "Moderator is thinking…" : "진행자가 다음 질문을 준비 중…"}
+            </span>
+          ) : (
+            question
+          )}
+        </p>
+      </div>
+      {!busy && tts.available && question && (
+        <button
+          type="button"
+          onClick={() => void tts.speak(question)}
+          className="mt-3 inline-flex items-center gap-1.5 self-start text-meta font-medium text-accent"
+        >
+          🔊 {en ? "Replay" : "다시 듣기"}
+        </button>
+      )}
+
+      {/* 답변 */}
+      <div className="mt-auto pt-6">
+        {voiceFilled && canType && (
+          <p className="mb-2 text-2xs text-ink-faint">
+            {en ? "Here's what we heard — edit it or re-record, then press Next." : "이렇게 들었어요 — 고치거나 다시 녹음한 뒤 ‘다음’을 눌러 주세요."}
+          </p>
+        )}
+        {voiceInput.mode === "text" && recorder.supported && (
+          <p className="mb-2 text-2xs text-ink-faint">
+            {en ? "Switched to typing. The mic still works if you want to try again." : "키보드 입력으로 전환했어요. 마이크는 계속 쓸 수 있어요."}
+          </p>
+        )}
+        {phase === "recording" && (
+          <p className="mb-2 text-meta text-nogo">● {en ? "Recording" : "녹음 중"} {recorder.elapsedSec}s</p>
+        )}
+        {phase === "transcribing" && (
+          <p className="mb-2 text-meta text-ink-faint">{en ? "Transcribing…" : "음성 인식 중…"}</p>
+        )}
+        {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
+
+        <div className="flex items-end gap-2">
+          {recorder.supported && (
+            <button
+              type="button"
+              onClick={() => void toggleRecord()}
+              disabled={busy || phase === "transcribing"}
+              aria-label={en ? "Record answer" : "음성으로 답하기"}
+              className={cn(
+                "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-meta font-medium transition-colors disabled:opacity-40",
+                phase === "recording" ? "bg-nogo/10 text-nogo" : "bg-accent-wash text-accent-deep ring-1 ring-line hover:bg-accent-wash/70",
+              )}
+            >
+              {phase === "recording" ? (en ? "■" : "■") : "🎤"}
+            </button>
+          )}
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                goNext();
+              }
+            }}
+            rows={3}
+            disabled={!canType}
+            placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
+            className={fieldClass("min-h-12 flex-1 resize-none text-lead")}
+          />
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={!canNext}
+            className="h-12 shrink-0 rounded-xl bg-accent-solid px-5 text-base font-medium text-accent-on disabled:opacity-40"
+          >
+            {en ? "Next" : "다음"}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
