@@ -19,6 +19,7 @@ from ..schemas.models import (
     InterviewGuide,
     Material,
     Project,
+    QuestionSummary,
     Session,
     ThemeInsight,
     Turn,
@@ -484,14 +485,17 @@ def save_insight(pid: str, i: Insight) -> Insight:
     with db_session() as s:
         r = s.get(InsightRow, pid)
         themes = [t.model_dump() for t in i.themes]
+        summaries = [qs.model_dump() for qs in i.question_summaries]
         if r:
             r.overall, r.themes, r.sentiment = i.overall, themes, i.sentiment
             r.bucket_distribution = i.bucket_distribution
+            r.question_summaries = summaries
             r.session_count, r.generated_at = i.session_count, i.generated_at
         else:
             s.add(InsightRow(
                 project_id=pid, overall=i.overall, themes=themes, sentiment=i.sentiment,
                 bucket_distribution=i.bucket_distribution,
+                question_summaries=summaries,
                 session_count=i.session_count, generated_at=i.generated_at,
             ))
         s.commit()
@@ -508,6 +512,9 @@ def get_insight(pid: str) -> Insight | None:
             themes=[ThemeInsight(**t) for t in (r.themes or [])],
             sentiment=dict(r.sentiment or {}),
             bucket_distribution=dict(r.bucket_distribution or {}),
+            question_summaries=[
+                QuestionSummary(**q) for q in (r.question_summaries or [])
+            ],
             session_count=r.session_count,
             generated_at=r.generated_at,
         )

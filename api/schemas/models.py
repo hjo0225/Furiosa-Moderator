@@ -235,6 +235,17 @@ class ThemeInsight(BaseModel):
     mention_count: int = 0
 
 
+class QuestionSummary(BaseModel):
+    """문항별 AI 요약(F6.3) — 응답자 발언 기반 headline(핵심 발견) + 짧은 summary.
+
+    버킷 분포(bucket_distribution, 계약 1: DB 실측)와 달리 이건 LLM '해석' 출력이다 —
+    theme 요약과 같은 계열이라 세지 않고 지어내지 않으며 응답자 발언에만 근거한다.
+    """
+    question_id: str
+    headline: str = ""
+    summary: str = ""
+
+
 class Insight(BaseModel):
     project_id: str = ""
     overall: str = ""
@@ -243,5 +254,8 @@ class Insight(BaseModel):
     # 문항별 응답 버킷 분포(F6.4) — {question_id: {bucket_id: N}}. sentiment 와 똑같이
     # LLM 이 아니라 DB 실측으로 채운다(계약 1). LLM 은 개별 답변을 버킷으로 '분류'만 한다.
     bucket_distribution: dict = Field(default_factory=dict)
+    # 문항별 AI 요약(F6.3) — 문항마다 headline+summary. 버킷 분포가 '분류·개수'라면
+    # 이건 '무엇을 말했나'의 서술 요약이다. theme 요약처럼 LLM 해석 출력(세지 않는다).
+    question_summaries: list[QuestionSummary] = Field(default_factory=list)
     session_count: int = 0
     generated_at: datetime = Field(default_factory=_now)

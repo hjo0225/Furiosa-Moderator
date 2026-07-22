@@ -165,6 +165,41 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
       .filter((sec) => sec.total > 0);
   }, [guide, insight]);
 
+  // 문항별 AI 요약(F6.3) — question_id → {headline, summary}.
+  const summaryMap = useMemo(() => {
+    const m = new Map<string, { headline: string; summary: string }>();
+    for (const qs of insight?.question_summaries ?? []) {
+      m.set(qs.question_id, { headline: qs.headline, summary: qs.summary });
+    }
+    return m;
+  }, [insight]);
+
+  // 요약과 버킷 분포를 문항 단위로 합친다. 버킷이 있는 문항엔 요약을 얹고,
+  // 버킷은 없지만 요약만 있는 문항은 요약 전용 카드로 노출한다(요약이 묻히지 않게).
+  const questionSections = useMemo(() => {
+    type QBar = { id: string; label: string; count: number; pct: number };
+    const withBuckets = bucketSections.map((sec) => ({
+      ...sec,
+      headline: summaryMap.get(sec.id)?.headline ?? "",
+      summary: summaryMap.get(sec.id)?.summary ?? "",
+    }));
+    const covered = new Set(bucketSections.map((s) => s.id));
+    const summaryOnly = (guide?.questions ?? [])
+      .filter((q) => !covered.has(q.id) && summaryMap.has(q.id))
+      .map((q) => {
+        const s = summaryMap.get(q.id)!;
+        return {
+          id: q.id,
+          text: q.text,
+          total: 0,
+          bars: [] as QBar[],
+          headline: s.headline,
+          summary: s.summary,
+        };
+      });
+    return [...withBuckets, ...summaryOnly];
+  }, [bucketSections, summaryMap, guide]);
+
   async function refreshInsight() {
     setInsightBusy(true);
     setError(null);
@@ -343,36 +378,52 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
               </div>
             )}
 
-            {bucketSections.length > 0 && (
+            {questionSections.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-meta font-medium text-ink-soft">문항별 응답 분류</h3>
+                <h3 className="text-meta font-medium text-ink-soft">문항별 요약·분류</h3>
                 <div className="mt-3 space-y-4">
-                  {bucketSections.map((sec) => (
+                  {questionSections.map((sec) => (
                     <div key={sec.id} className="rounded-lg bg-bg p-4 ring-1 ring-line">
                       <div className="flex items-baseline justify-between gap-2">
                         <p className="text-meta font-medium text-ink">{sec.text}</p>
-                        <span className="shrink-0 font-mono text-2xs text-ink-faint">
-                          응답 {sec.total}건
-                        </span>
+                        {sec.total > 0 && (
+                          <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                            응답 {sec.total}건
+                          </span>
+                        )}
                       </div>
-                      <ul className="mt-3 space-y-2">
-                        {sec.bars.map((bar) => (
-                          <li key={bar.id}>
-                            <div className="flex items-baseline justify-between gap-2 text-meta">
-                              <span className="text-ink-soft">{bar.label}</span>
-                              <span className="shrink-0 font-mono text-2xs text-ink-faint">
-                                {bar.count} · {bar.pct}%
-                              </span>
-                            </div>
-                            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-accent-wash">
-                              <div
-                                className="h-full rounded-full bg-accent-solid transition-[width]"
-                                style={{ width: `${bar.pct}%` }}
-                              />
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
+                      {(sec.headline || sec.summary) && (
+                        <div className="mt-2">
+                          {sec.headline && (
+                            <p className="text-meta font-semibold text-ink">{sec.headline}</p>
+                          )}
+                          {sec.summary && (
+                            <p className="mt-1 text-meta leading-relaxed text-ink-soft">
+                              {sec.summary}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {sec.bars.length > 0 && (
+                        <ul className="mt-3 space-y-2">
+                          {sec.bars.map((bar) => (
+                            <li key={bar.id}>
+                              <div className="flex items-baseline justify-between gap-2 text-meta">
+                                <span className="text-ink-soft">{bar.label}</span>
+                                <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                                  {bar.count} · {bar.pct}%
+                                </span>
+                              </div>
+                              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-accent-wash">
+                                <div
+                                  className="h-full rounded-full bg-accent-solid transition-[width]"
+                                  style={{ width: `${bar.pct}%` }}
+                                />
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   ))}
                 </div>
