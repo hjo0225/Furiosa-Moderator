@@ -106,3 +106,47 @@ def refresh_project(pid: str) -> None:
             log.warning("슬롯 요약 실패 (project=%s, angle=%s): %s", pid, angle, e)
             summary = ""
         save_slot_summary(pid, angle, summary)
+
+
+def index_material(pid: str, m) -> int:
+    """자료 1개만 청크·임베딩해서 append(전체 재구축 안 함). 반환=추가 청크 수.
+
+    seq 는 자료 내부 순번이라 프로젝트 전역에서 유일하지 않다(검색은 seq 를 안 쓰고 코사인
+    순이므로 무해). 전역 재번호가 필요하면 full rebuild(index_project)를 쓴다.
+    """
+    rows = chunks_with_angle([m])
+    if not rows:
+        return 0
+    vecs = embed_texts([r[1] for r in rows])
+    with db_session() as s:
+        for (seq, text, angle, source), v in zip(rows, vecs):
+            s.add(BriefingChunkRow(id=new_id("b_"), project_id=pid, seq=seq,
+                                   text=text, source=source, angle=angle, embedding=v))
+        s.commit()
+    return len(rows)
+
+
+def refresh_slot(pid: str, angle: str) -> None:
+    """그 슬롯 자료만 모아 재요약·저장. 요약 실패는 흡수하고 '' 저장."""
+    from ..services.material import summarize_slot
+    from ..services.store import list_materials, save_slot_summary
+
+    texts = [m.text for m in list_materials(pid) if m.angle == angle]
+    try:
+        summary = summarize_slot(texts)
+    except Exception as e:  # noqa: BLE001 — 요약 실패가 수집을 죽이지 않게
+        log.warning("슬롯 요약 실패 (project=%s, angle=%s): %s", pid, angle, e)
+        summary = ""
+    save_slot_summary(pid, angle, summary)
+
+
+def add_materials_incremental(pid: str, materials: list) -> None:
+    """추가된 자료만 증분 인덱싱 + 건드린 슬롯만 재요약. 인덱싱 실패는 흡수(다음 refresh 가 따라잡음)."""
+    for m in materials:
+        try:
+            index_material(pid, m)
+        except Exception as e:  # noqa: BLE001 — 임베딩 일시 장애가 수집을 죽이지 않게
+            log.warning("증분 인덱싱 실패, 다음 refresh 로 미룸 (project=%s, material=%s): %s",
+                        pid, getattr(m, "id", "?"), e)
+    for angle in {m.angle for m in materials}:
+        refresh_slot(pid, angle)

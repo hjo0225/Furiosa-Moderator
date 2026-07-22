@@ -165,28 +165,42 @@ def research_candidates(pid: str) -> dict:
 
 @router.post("/{pid}/materials/web")
 def add_web_materials(pid: str, body: WebSelectIn) -> dict:
-    """선택 후보 크롤 → materials 저장 → RAG 재인덱싱·슬롯 요약 재계산."""
+    """선택 후보 크롤 → materials 저장 → 증분 인덱싱·요약. 중복 URL(요청 내·기존 풀)은 건너뛴다."""
     _require(pid)
-    urls = [c.url for c in body.selected]
-    if not urls:
+    if not body.selected:
         raise HTTPException(400, "선택된 자료가 없습니다.")
+    existing = {m.url for m in store.list_materials(pid) if m.url}
+    picked: list = []
+    seen: set[str] = set()
+    skipped: list[str] = []
+    for c in body.selected:
+        if not c.url:
+            continue
+        if c.url in existing or c.url in seen:
+            skipped.append(c.url)
+            continue
+        seen.add(c.url)
+        picked.append(c)
+    if not picked:
+        return {"stored": 0, "failed": [], "skipped": skipped}    # 전부 중복/무효
     try:
-        bodies = research.crawl(urls)
+        bodies = research.crawl([c.url for c in picked])
     except research.ResearchError as e:
         raise HTTPException(502, f"본문 수집에 실패했습니다: {e}") from e
-    stored = 0
-    for c in body.selected:
-        text = bodies.get(c.url, "")
-        if not text.strip():
-            continue                        # 크롤 실패분 스킵
-        store.create_material(Material(
+    created: list = []
+    failed: list[str] = []
+    for c in picked:
+        text = (bodies.get(c.url) or "").strip()
+        if not text:
+            failed.append(c.url)                # 크롤 실패분(같은 루프에서 판정)
+            continue
+        created.append(store.create_material(Material(
             project_id=pid, source="web", angle=c.angle,
             url=c.url, title=c.title or c.url, text=text,
-        ))
-        stored += 1
-    briefing_pipeline.refresh_project(pid)
-    failed = [c.url for c in body.selected if not bodies.get(c.url, "").strip()]
-    return {"stored": stored, "failed": failed}
+        )))
+    if created:                                  # 저장분 있을 때만 후처리
+        briefing_pipeline.add_materials_incremental(pid, created)
+    return {"stored": len(created), "failed": failed, "skipped": skipped}
 
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
@@ -207,11 +221,11 @@ async def upload_material(pid: str, file: UploadFile, angle: str = Form(...)) ->
         raise HTTPException(400, str(e)) from e
     if not text.strip():
         raise HTTPException(400, "자료에서 텍스트를 추출하지 못했습니다(스캔 PDF 등).")
-    store.create_material(Material(
+    m = store.create_material(Material(
         project_id=pid, source="upload", angle=angle,
         title=file.filename or "업로드", text=text,
     ))
-    briefing_pipeline.refresh_project(pid)
+    briefing_pipeline.add_materials_incremental(pid, [m])
     return {"project_id": pid, "chars": len(text), "angle": angle}
 
 

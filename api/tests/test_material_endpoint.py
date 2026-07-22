@@ -34,7 +34,7 @@ def test_upload_material_creates_row(monkeypatch):
     saved = []
     monkeypatch.setattr(store_mod, "get_project", lambda pid: Project(id=pid, topic="주제"))
     monkeypatch.setattr(store_mod, "create_material", lambda m: saved.append(m) or m)
-    monkeypatch.setattr(projects_mod.briefing_pipeline, "refresh_project", lambda pid: None)
+    monkeypatch.setattr(projects_mod.briefing_pipeline, "add_materials_incremental", lambda pid, mats: None)
     client = TestClient(main.app)
     resp = client.post(
         "/api/projects/p_1/material",
