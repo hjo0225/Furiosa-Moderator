@@ -28,6 +28,7 @@ from ..schemas.models import (
     Material,
     Project,
     ProjectCreateIn,
+    ResponseBucket,
     WebhookSetIn,
     WebSelectIn,
 )
@@ -88,8 +89,14 @@ def get_project(pid: str) -> Project:
     return _require(pid)
 
 
+class _GenBucket(ResponseBucket):
+    """생성 전용 — definition 을 필수로 승격(F2.3.2). Qwen3 가 통째로 생략하는 걸 막는다."""
+
+    definition: str
+
+
 class _GenQuestion(GuideQuestion):
-    """생성 전용 스키마 — goal 을 필수로 승격.
+    """생성 전용 스키마 — goal·buckets 를 필수로 승격.
 
     저장·수정용 GuideQuestion 의 goal 은 default("") 라 LLM 스키마에서 required 가 아니고,
     Qwen3 는 required 아닌 필드를 통째로 생략하는 실사고가 났다. 필수로 승격하면
@@ -97,6 +104,7 @@ class _GenQuestion(GuideQuestion):
     """
 
     goal: str
+    response_buckets: list[_GenBucket]
 
 
 class _GenGuide(InterviewGuide):
@@ -119,6 +127,22 @@ def _split_goal_from_text(q: GuideQuestion) -> None:
     tail = tail.strip().lstrip(":：").strip()
     if tail and not q.goal.strip():
         q.goal = tail
+
+
+def _normalize_buckets(q: GuideQuestion) -> None:
+    """버킷 id 확정 + 캐치올 보장(F2.3.3). order/id 채우기와 같은 결정론 서버 보정.
+
+    LLM 이 id 를 비워 보내거나 캐치올을 빠뜨리는 실사고 대비. 버킷이 아예 없으면 손대지 않는다
+    (구가이드 호환).
+    """
+    if not q.response_buckets:
+        return
+    for i, b in enumerate(q.response_buckets):
+        b.id = b.id or f"{q.id}_b{i + 1}"
+    if not any(b.is_catchall for b in q.response_buckets):
+        q.response_buckets.append(
+            ResponseBucket(id=f"{q.id}_other", label="기타", is_catchall=True)
+        )
 
 
 @router.post("/{pid}/guide", response_model=InterviewGuide)
@@ -144,6 +168,7 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
         _split_goal_from_text(q)
         q.order = i
         q.id = q.id or f"q{i + 1}"
+        _normalize_buckets(q)
     guide.goal = guide.goal or topic
     return store.save_guide(pid, guide)
 

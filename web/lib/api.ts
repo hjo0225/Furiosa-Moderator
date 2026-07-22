@@ -30,7 +30,20 @@ export type MaterialUploadResult = {
   summarized?: boolean; // 긴 자료를 LLM이 요약해 저장한 경우 true (백엔드 ② 이후)
 };
 
-export type GuideQuestion = { id: string; text: string; goal: string; order: number };
+export type ResponseBucket = {
+  id: string;
+  label: string;
+  definition: string;
+  is_catchall: boolean;
+  is_negative_case: boolean;
+};
+export type GuideQuestion = {
+  id: string;
+  text: string;
+  goal: string;
+  order: number;
+  response_buckets: ResponseBucket[];
+};
 
 export type InterviewGuide = {
   project_id: string;
@@ -104,6 +117,9 @@ export type SpeechVoice = { name: string; label: string };
 
 /** 화면에 그대로 그리는 대화 한 줄 — 서버 Turn 의 표시용 축약본. */
 export type TranscriptTurn = { role: TurnRole; text: string; emotion?: string };
+
+/** 질문에 붙는 제시 자료(시안·광고·컨셉). Phase 1은 UI만 — 아직 API가 내려주지 않는다. */
+export type Stimulus = { type: "image" | "video"; url: string; caption?: string };
 
 // --- 코어 -------------------------------------------------------------------
 
