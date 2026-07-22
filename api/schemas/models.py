@@ -33,6 +33,29 @@ def _validate_webhook_url(v: str) -> str:
 
 ProjectStatus = Literal["draft", "deployed", "closed"]
 
+Angle = Literal["현상", "원인", "활용"]
+
+
+class Material(BaseModel):
+    id: str = ""
+    project_id: str = ""
+    source: Literal["upload", "web"]
+    angle: Angle
+    url: str = ""            # web 만
+    title: str = ""          # web=페이지 제목, upload=파일명
+    text: str = ""           # 본문 verbatim
+    created_at: datetime = Field(default_factory=_now)
+
+
+class WebCandidate(BaseModel):
+    angle: Angle
+    title: str = ""
+    url: str
+
+
+class WebSelectIn(BaseModel):
+    selected: list[WebCandidate] = Field(default_factory=list)
+
 
 class ResponseBucket(BaseModel):
     """질문별 응답 분류 카테고리(코드북)이자 프로빙 목표 (PRD F2.3).

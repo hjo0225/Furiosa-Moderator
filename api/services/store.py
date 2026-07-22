@@ -17,12 +17,22 @@ from ..schemas.models import (
     GuideQuestion,
     Insight,
     InterviewGuide,
+    Material,
     Project,
     Session,
     ThemeInsight,
     Turn,
 )
-from .db import GuideRow, InsightRow, ProjectRow, SessionRow, TurnRow, db_session
+from .db import (
+    GuideRow,
+    InsightRow,
+    MaterialRow,
+    ProjectRow,
+    SessionRow,
+    SlotSummaryRow,
+    TurnRow,
+    db_session,
+)
 
 
 def new_id(prefix: str = "") -> str:
@@ -56,6 +66,60 @@ def _turn(r: TurnRow) -> Turn:
         question_id=r.question_id, pii_types=list(r.pii_types or []),
         guardrail_rewritten=r.guardrail_rewritten, created_at=r.created_at,
     )
+
+
+def _material(r: MaterialRow) -> Material:
+    return Material(
+        id=r.id, project_id=r.project_id, source=r.source, angle=r.angle,
+        url=r.url, title=r.title, text=r.text, created_at=r.created_at,
+    )
+
+
+def create_material(m: Material) -> Material:
+    m.id = m.id or new_id("m_")
+    with db_session() as s:
+        s.add(MaterialRow(
+            id=m.id, project_id=m.project_id, source=m.source, angle=m.angle,
+            url=m.url, title=m.title, text=m.text, created_at=m.created_at,
+        ))
+        s.commit()
+    return m
+
+
+def list_materials(pid: str) -> list[Material]:
+    with db_session() as s:
+        rows = s.scalars(
+            select(MaterialRow).where(MaterialRow.project_id == pid)
+            .order_by(MaterialRow.created_at)
+        ).all()
+        return [_material(r) for r in rows]
+
+
+def delete_material(pid: str, mid: str) -> None:
+    with db_session() as s:
+        r = s.get(MaterialRow, mid)
+        if r and r.project_id == pid:
+            s.delete(r)
+            s.commit()
+
+
+def save_slot_summary(pid: str, angle: str, summary: str) -> None:
+    with db_session() as s:
+        r = s.get(SlotSummaryRow, {"project_id": pid, "angle": angle})
+        if r:
+            r.summary, r.updated_at = summary, datetime.now(timezone.utc)
+        else:
+            s.add(SlotSummaryRow(project_id=pid, angle=angle, summary=summary,
+                                 updated_at=datetime.now(timezone.utc)))
+        s.commit()
+
+
+def get_slot_summaries(pid: str) -> dict[str, str]:
+    with db_session() as s:
+        rows = s.scalars(
+            select(SlotSummaryRow).where(SlotSummaryRow.project_id == pid)
+        ).all()
+        return {r.angle: r.summary for r in rows}
 
 
 # --- Project ----------------------------------------------------------------

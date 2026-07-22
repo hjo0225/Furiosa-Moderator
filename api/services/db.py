@@ -142,8 +142,35 @@ class BriefingChunkRow(Base):
     seq: Mapped[int] = mapped_column(Integer, default=0)
     text: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(200), default="")   # 출처 보존 (중립성 필터)
+    angle: Mapped[str] = mapped_column(String(10), default="")     # 슬롯 필터 검색용
     embedding = mapped_column(Vector(1024))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MaterialRow(Base):
+    __tablename__ = "materials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(10))     # 'upload' | 'web'
+    angle: Mapped[str] = mapped_column(String(10))      # '현상' | '원인' | '활용'
+    url: Mapped[str] = mapped_column(Text, default="")
+    title: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class SlotSummaryRow(Base):
+    __tablename__ = "slot_summaries"
+
+    project_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    angle: Mapped[str] = mapped_column(String(10), primary_key=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 @lru_cache
