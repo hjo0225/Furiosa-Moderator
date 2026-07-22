@@ -35,17 +35,25 @@ class Candidate:
 
 
 def _run_actor(actor_id: str, run_input: dict) -> list[dict]:
-    """Apify actor 동기 실행 → dataset items. 테스트는 이 경계를 monkeypatch."""
+    """Apify actor 동기 실행 → dataset items. 테스트는 이 경계를 monkeypatch.
+
+    apify-client SDK 대신 REST(run-sync-get-dataset-items)를 httpx 로 직접 호출한다 —
+    SDK 는 pydantic>=2.11 을 끌어와 레포 핀(pydantic==2.10.4)과 충돌하기 때문(httpx 는 이미 의존성).
+    반환은 dataset items 배열(list[dict])로, SDK 경로와 동일하다.
+    """
     token = get_settings().apify_token
     if not token:
         raise ResearchError("APIFY_TOKEN 이 설정되지 않았습니다.")
-    from apify_client import ApifyClient
+    import httpx
 
-    client = ApifyClient(token)
-    run = client.actor(actor_id).call(run_input=run_input)
-    if not run or not run.get("defaultDatasetId"):
-        raise ResearchError(f"Apify actor 실행 실패: {actor_id}")
-    return client.dataset(run["defaultDatasetId"]).list_items().items
+    actor_path = actor_id.replace("/", "~")   # API 경로는 'apify~google-search-scraper' 형식
+    url = f"https://api.apify.com/v2/acts/{actor_path}/run-sync-get-dataset-items"
+    try:
+        resp = httpx.post(url, params={"token": token}, json=run_input, timeout=120.0)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPError as e:
+        raise ResearchError(f"Apify actor 실행 실패({actor_id}): {e}") from e
 
 
 def search(slot_queries: dict[str, list[str]]) -> list[Candidate]:
