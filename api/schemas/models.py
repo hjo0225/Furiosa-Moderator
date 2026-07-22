@@ -33,6 +33,19 @@ def _validate_webhook_url(v: str) -> str:
 
 ProjectStatus = Literal["draft", "deployed", "closed"]
 
+Angle = Literal["현상", "원인", "활용"]
+
+
+class Material(BaseModel):
+    id: str = ""
+    project_id: str = ""
+    source: Literal["upload", "web"]
+    angle: Angle
+    url: str = ""            # web 만
+    title: str = ""          # web=페이지 제목, upload=파일명
+    text: str = ""           # 본문 verbatim
+    created_at: datetime = Field(default_factory=_now)
+
 
 class GuideQuestion(BaseModel):
     id: str
