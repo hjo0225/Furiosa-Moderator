@@ -130,8 +130,10 @@ def stream_turn(
     if retry is not None:
         log.info("무의미 발화 — 그래프를 깨우지 않고 되묻는다 (session=%s)", session.id)
         yield {"token": retry.text}
+        # question_id 는 라우터가 제시 자료를 조회한 뒤 벗겨 내는 내부 핸드오프다(응답자엔 미노출).
         yield {"meta": {"message": retry.text, "done": False, "asked": session.asked,
-                        "is_probe": False, "guardrail_rewritten": False}}
+                        "is_probe": False, "guardrail_rewritten": False,
+                        "question_id": retry.question_id}}
         return
 
     g, config, payload, _ = _prepare(project_id, session, guide, text, lang)
@@ -142,6 +144,8 @@ def stream_turn(
     result = g.get_state(config).values
     session.covered = list(result.get("covered", session.covered))
     session.asked = int(result.get("asked", session.asked))
+    # question_id 는 라우터가 제시 자료를 조회한 뒤 벗겨 내는 내부 핸드오프다(응답자엔 미노출).
     yield {"meta": {"message": result.get("message", ""), "done": bool(result.get("done")),
                     "asked": session.asked, "is_probe": bool(result.get("is_probe")),
-                    "guardrail_rewritten": bool(result.get("rewritten"))}}
+                    "guardrail_rewritten": bool(result.get("rewritten")),
+                    "question_id": result.get("question_id", "")}}

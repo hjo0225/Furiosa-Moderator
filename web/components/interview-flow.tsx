@@ -38,14 +38,14 @@ export function InterviewFlow({
   sessionId,
   locale = "ko",
   en = false,
-  stimulus,
+  stimulus: initialStimulus,
   onComplete,
 }: {
   projectId: string;
   sessionId: string;
   locale?: string;
   en?: boolean;
-  stimulus?: Stimulus; // Phase 1: 항상 undefined. 주어지면 2분할로 렌더.
+  stimulus?: Stimulus; // 초기값(선택). 실질 소스는 매 턴 응답(out.stimulus) — 문항마다 달라진다.
   onComplete: (answerCount: number) => void;
 }) {
   const tts = useTts(locale);
@@ -59,6 +59,8 @@ export function InterviewFlow({
   const [mainQ, setMainQ] = useState(0); // 프로빙 제외 '본 질문' 번호 (PRD F5.3: 프로빙은 진행률 미반영)
   const [voiceFilled, setVoiceFilled] = useState(false); // 방금 답변이 음성 전사에서 왔나(확인 안내용)
   const [submitting, setSubmitting] = useState(false);
+  // 제시 자료는 문항마다 다르다 — 매 턴 응답(out.stimulus)이 실질 소스다. 초기값만 프롭에서 받는다.
+  const [stimulus, setStimulus] = useState<Stimulus | undefined>(initialStimulus);
   const started = useRef(false);
 
   // 녹음 미지원이면 즉시 텍스트로 폴백(편도).
@@ -73,6 +75,7 @@ export function InterviewFlow({
       setError(null);
       try {
         const out = await sendTurn(projectId, sessionId, text, en ? "en" : "ko");
+        setStimulus(out.stimulus ?? undefined); // 이번 문항의 제시 자료로 교체(없으면 단일 컬럼으로 복귀)
         const msg = (out.message ?? "").trim();
         if (msg && !out.done && !out.is_probe) setMainQ((n) => n + 1); // 오프닝·본 질문만 카운트, 프로빙 제외
         if (text) setAnswerCount((n) => n + 1); // 방금 전달된 답변을 센다(성공 시에만)

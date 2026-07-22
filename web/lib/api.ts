@@ -53,6 +53,8 @@ export type GuideQuestion = {
   goal: string;
   order: number;
   response_buckets: ResponseBucket[];
+  // 이 문항을 다룰 때 응답자 화면에 띄울 제시 자료(선택). 미첨부면 null/undefined — 기본 단일 컬럼.
+  stimulus?: Stimulus | null;
 };
 
 export type InterviewGuide = {
@@ -106,6 +108,8 @@ export type TurnOut = {
   is_probe: boolean;
   guardrail_rewritten: boolean;
   emotion: string;
+  // 이번 진행자 발화가 다루는 문항의 제시 자료(있으면). url 이 빈 것은 서버가 걸러 내려주지 않는다.
+  stimulus?: Stimulus;
 };
 
 export type ThemeInsight = { theme: string; summary: string; quotes: string[]; mention_count: number };
@@ -145,7 +149,8 @@ export type SpeechVoice = { name: string; label: string };
 /** 화면에 그대로 그리는 대화 한 줄 — 서버 Turn 의 표시용 축약본. */
 export type TranscriptTurn = { role: TurnRole; text: string; emotion?: string };
 
-/** 질문에 붙는 제시 자료(시안·광고·컨셉). Phase 1은 UI만 — 아직 API가 내려주지 않는다. */
+/** 질문에 붙는 제시 자료(시안·광고·컨셉). 가이드 문항에 첨부하면 진행자가 그 문항을 다룰 때
+ *  턴 응답(TurnOut.stimulus)에 실려 내려오고 응답자 화면이 2분할로 렌더한다. */
 export type Stimulus = { type: "image" | "video"; url: string; caption?: string };
 
 // --- 코어 -------------------------------------------------------------------
