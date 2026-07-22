@@ -30,4 +30,11 @@ def strategize(state: InterviewState) -> dict:
         pending = [qid for qid, e in ledger.items() if e["status"] == "pending"]
         if pending:
             return {"action": "advance", "question_id": pending[0], "is_probe": False, "probe_type": ""}
+    # 피로 감지 — 응답자가 지쳤는데 또 캐물으려 하면 강등한다 (F5.1). 남은 pending 이 있으면
+    # 거기로 넘어가고, 없으면 억지로 끌지 말고 정직하게 종료한다.
+    if state.get("fatigue") and state.get("action") in ("probe", "clarify"):
+        pending = [qid for qid, e in ledger.items() if e["status"] == "pending"]
+        if pending:
+            return {"action": "advance", "question_id": pending[0], "is_probe": False, "probe_type": ""}
+        return {"action": "close", "end_reason": "fatigue"}
     return {}

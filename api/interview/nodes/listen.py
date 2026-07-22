@@ -36,6 +36,7 @@ def listen(state: InterviewState) -> dict:
             state["guide"], state.get("messages", []), utterance,
             state.get("asked", 0), state.get("probe_streak", 0), ledger,
             pace_line=pace(state.get("asked", 0), MAX_ASKED, pending_n),   # 도구: 페이스 (결정론)
+            current_qid=prev_qid,   # 지금 문항의 응답 버킷을 프롬프트에 실어 버킷 적합도 판단 (F5.1)
         ),
         ListenOut,
         max_tokens=500,
@@ -50,6 +51,7 @@ def listen(state: InterviewState) -> dict:
         "action": out.action,
         "question_id": out.question_id or prev_qid,
         "probe_type": out.probe_type,
+        "fatigue": out.fatigue,
         "is_probe": out.action == "probe",
         "draft": "",
         **({"end_reason": "model_done"} if out.action == "close" else {}),

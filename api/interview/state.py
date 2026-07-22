@@ -49,7 +49,8 @@ class InterviewState(TypedDict, total=False):
     action: str                # 행동 7종: probe | clarify | challenge | advance | revisit | redirect | close
     question_id: str
     is_probe: bool
-    probe_type: str            # probe 일 때 래더링 단계: 구체화 | 심화 (로그 관찰용)
+    probe_type: str            # probe 일 때 프로빙 유형: 구체화 | 심화 | 예시요청 | 대비 | 결과추적 | 감정원인 (F5.1)
+    fatigue: bool              # 응답자 피로 신호 감지 — strategize 가 probe/clarify 를 advance/close 로 강등 (F5.1)
     analysis: dict             # listen 분석 결과 — contradiction·reason 등 (타임트래블 디버깅용)
     message: str
     rewritten: bool
