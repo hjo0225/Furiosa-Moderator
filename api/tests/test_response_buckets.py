@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from api.prompts.guide import GUIDE_SYSTEM
+from api.routers.projects import _normalize_buckets
 from api.schemas.models import GuideQuestion, InterviewGuide, ResponseBucket
 
 
@@ -33,3 +34,30 @@ def test_guide_system_has_bucket_rules():
     assert "상호배타" in GUIDE_SYSTEM        # MECE
     assert "is_catchall" in GUIDE_SYSTEM
     assert "is_negative_case" in GUIDE_SYSTEM
+
+
+def test_normalize_adds_catchall_and_ids():
+    q = GuideQuestion(id="q2", text="t", response_buckets=[
+        ResponseBucket(label="A", definition="a"),
+        ResponseBucket(label="B", definition="b"),
+    ])
+    _normalize_buckets(q)
+    ids = [b.id for b in q.response_buckets]
+    assert ids[:2] == ["q2_b1", "q2_b2"]        # id 결정론 채움
+    assert q.response_buckets[-1].is_catchall    # 캐치올 자동 추가
+    assert q.response_buckets[-1].id == "q2_other"
+
+
+def test_normalize_keeps_existing_catchall():
+    q = GuideQuestion(id="q3", text="t", response_buckets=[
+        ResponseBucket(label="A", definition="a"),
+        ResponseBucket(label="기타", is_catchall=True),
+    ])
+    _normalize_buckets(q)
+    assert sum(1 for b in q.response_buckets if b.is_catchall) == 1  # 중복 추가 안 함
+
+
+def test_normalize_empty_noop():
+    q = GuideQuestion(id="q4", text="t")
+    _normalize_buckets(q)
+    assert q.response_buckets == []   # 버킷 없으면 강제로 만들지 않음
