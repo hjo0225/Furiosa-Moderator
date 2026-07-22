@@ -383,7 +383,7 @@ def test_reflect_emotion_patches_turn(fakes, monkeypatch):
     config = {"configurable": {"thread_id": "s1"}}
     _start(g, config)
     g.invoke(Command(resume={"text": "배달비 비싸요", "turn_id": "t_9"}), config)
-    assert patched == {"t_9": {"emotion": "불만", "emotion_confidence": 0.7}}
+    assert patched == {"t_9": {"emotion": "불만", "emotion_confidence": 0.7, "question_id": "q1"}}
 
 
 def test_close_turn_still_reflects_last_answer(fakes, monkeypatch):
@@ -405,7 +405,7 @@ def test_close_turn_still_reflects_last_answer(fakes, monkeypatch):
     assert r["done"] is True and "__interrupt__" not in r
     v = g.get_state(config).values
     assert v["ledger"]["q1"]["facts"] == ["총정리 사실"]           # 마지막 답변이 원장에 남았다
-    assert patched == {"t_last": {"emotion": "만족", "emotion_confidence": 0.8}}
+    assert patched == {"t_last": {"emotion": "만족", "emotion_confidence": 0.8, "question_id": "q1"}}
     assert g.get_state(config).next == ()                          # reflect 뒤 END — 재잠들지 않는다
 
 
