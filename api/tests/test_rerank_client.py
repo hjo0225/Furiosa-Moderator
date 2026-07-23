@@ -51,6 +51,29 @@ def test_rerank_returns_sorted_by_score_desc(monkeypatch):
     assert captured["timeout"] == cli.timeout
 
 
+def test_rerank_truncates_long_documents(monkeypatch):
+    """장문은 max_doc_chars(기본 1200)로 잘라 보낸다 — 리랭커 타임아웃 방어(라이브 발견)."""
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"results": [{"index": 0, "relevance_score": 0.5}]}
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    _client().rerank("q", ["가" * 5000, "짧은 문서"])
+
+    sent = captured["json"]["documents"]
+    assert len(sent[0]) == 1200            # 5000자 → 1200자로 잘림
+    assert sent[1] == "짧은 문서"           # 짧은 건 그대로
+
+
 def test_rerank_empty_documents_skips_http_call(monkeypatch):
     calls = []
     monkeypatch.setattr(httpx, "post", lambda *a, **k: calls.append((a, k)))

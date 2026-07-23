@@ -166,24 +166,27 @@ class LLMClient:
     # --- 리랭크 --------------------------------------------------------------
 
     def rerank(self, query: str, documents: list[str], *, top_n: int = 3,
-               model: str | None = None) -> list[tuple[int, float]]:
+               model: str | None = None, max_doc_chars: int = 1200) -> list[tuple[int, float]]:
         """/v1/rerank 호출 — [(원본 index, relevance_score)] 를 점수 내림차순으로 반환.
 
         OpenAI SDK 에 rerank 가 없어 REST 를 httpx 로 직접 부른다(research._run_actor 관례).
         documents 가 비면 호출 없이 []. HTTP 실패는 max_retries 재시도 후 LLMError.
+        긴 문서는 max_doc_chars 로 잘라 보낸다 — 라이브에서 장문 30개 리랭킹이 타임아웃을
+        내는 걸 확인했다(코사인 폴백은 되지만 리랭커 이점을 잃음). 인덱스는 원본 순서 그대로.
         """
         if not documents:
             return []
         import httpx
 
         m = model or self.rerank_model
+        docs = [d[:max_doc_chars] for d in documents]
         last: Exception | None = None
         for attempt in range(self.max_retries):
             try:
                 resp = httpx.post(
                     f"{self.base_url}/rerank",
                     headers={"Authorization": f"Bearer {self.rerank_api_key}"},
-                    json={"model": m, "query": query, "documents": documents, "top_n": top_n},
+                    json={"model": m, "query": query, "documents": docs, "top_n": top_n},
                     timeout=self.timeout,
                 )
                 resp.raise_for_status()
