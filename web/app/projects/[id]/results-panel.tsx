@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { Mic } from "lucide-react";
 
-import { Button, Card } from "@/components/shared";
+import { Button, Card, ErrorState, Skeleton } from "@/components/shared";
 import { TranscriptView } from "@/components/response-viewer";
 import {
   getDashboard,
@@ -37,16 +37,17 @@ const STATUS_LABEL: Record<Session["status"], string> = {
   abandoned: "중단",
 };
 
-// 차트 색 — 디자인 토큰과 같은 값(차트는 CSS 변수를 못 읽어 리터럴로 둔다).
-const ACCENT = "#00a4df";
+// 차트 색 — design.md §1 데이터 팔레트(차트는 CSS 변수를 못 읽어 리터럴로 둔다).
+// 센티먼트: 긍정=mint · 중립=grey · 우려=orange · 부정=maroon(브랜드 red 와 충돌 회피).
+const ACCENT = "#E21500";
 const SENTIMENT_COLOR: Record<string, string> = {
-  긍정: "#00aa64",
-  중립: "#8a8a8a",
-  부정: "#ef4444",
-  우려: "#f18134",
-  positive: "#00aa64",
-  neutral: "#8a8a8a",
-  negative: "#ef4444",
+  긍정: "#70E697",
+  중립: "#7F7F7F",
+  부정: "#6F2020",
+  우려: "#FF9A52",
+  positive: "#70E697",
+  neutral: "#7F7F7F",
+  negative: "#6F2020",
 };
 
 function formatDateTime(iso: string | null): string {
@@ -277,8 +278,17 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  if (error && !data) return <p className="text-meta text-nogo">{error}</p>;
-  if (!data) return <p className="animate-pulse font-mono text-meta text-ink-faint">불러오는 중…</p>;
+  if (error && !data) {
+    return <ErrorState title="결과를 불러오지 못했어요" body={error} onRetry={load} />;
+  }
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -318,23 +328,23 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                 <div className="mt-2 h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={themeData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e6e6e6" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
                       <XAxis
                         dataKey="name"
-                        tick={{ fontSize: 11, fill: "#8a8a8a" }}
+                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
                         interval={0}
                         tickLine={false}
-                        axisLine={{ stroke: "#e6e6e6" }}
+                        axisLine={{ stroke: "#D4D4D4" }}
                       />
                       <YAxis
                         allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#8a8a8a" }}
+                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
                         tickLine={false}
                         axisLine={false}
                       />
                       <Tooltip
-                        cursor={{ fill: "#e5f2f6" }}
-                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e6e6e6" }}
+                        cursor={{ fill: "#FBEBE9" }}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }}
                         formatter={(v: number) => [`${v}회`, "언급"]}
                         labelFormatter={(_l, p) => p?.[0]?.payload?.full ?? ""}
                       />
@@ -351,22 +361,22 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                 <div className="mt-2 h-48 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={sentimentData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e6e6e6" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
                       <XAxis
                         dataKey="name"
-                        tick={{ fontSize: 11, fill: "#8a8a8a" }}
+                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#e6e6e6" }}
+                        axisLine={{ stroke: "#D4D4D4" }}
                       />
                       <YAxis
                         allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#8a8a8a" }}
+                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
                         tickLine={false}
                         axisLine={false}
                       />
                       <Tooltip
-                        cursor={{ fill: "#f3f3f3" }}
-                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e6e6e6" }}
+                        cursor={{ fill: "#E1E1E1" }}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }}
                       />
                       <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                         {sentimentData.map((d) => (
@@ -415,9 +425,9 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                                   {bar.count} · {bar.pct}%
                                 </span>
                               </div>
-                              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-accent-wash">
+                              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-platinum">
                                 <div
-                                  className="h-full rounded-full bg-accent-solid transition-[width]"
+                                  className="h-full rounded-full bg-red transition-[width]"
                                   style={{ width: `${bar.pct}%` }}
                                 />
                               </div>
@@ -531,9 +541,11 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                       인터뷰 대화 전사
                     </p>
                     {turns === null ? (
-                      <p className="animate-pulse font-mono text-meta text-ink-faint">
-                        불러오는 중…
-                      </p>
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-5/6" />
+                        <Skeleton className="h-4 w-2/3" />
+                      </div>
                     ) : (
                       <TranscriptView turns={turns} />
                     )}

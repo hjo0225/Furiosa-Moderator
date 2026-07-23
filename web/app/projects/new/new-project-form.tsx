@@ -6,12 +6,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BackLink, Button, buttonVariants, Container } from "@/components/shared";
+import { Button, buttonVariants, Container } from "@/components/shared";
 import { createProject, uploadMaterial } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const inputCls =
-  "w-full rounded-lg bg-surface px-3 py-2.5 text-base text-ink ring-1 ring-line placeholder:text-ink-faint/60 focus:outline-none focus:ring-accent";
+  "w-full rounded-lg bg-white px-3 py-2.5 text-base text-obsidian ring-1 ring-silver placeholder:text-grey/60 focus:outline-none focus:ring-red";
 
 export function NewProjectForm() {
   const router = useRouter();
@@ -59,20 +59,19 @@ export function NewProjectForm() {
   return (
     <main className="py-10 md:py-16">
       <Container className="max-w-2xl">
-        <BackLink href="/projects">내 프로젝트</BackLink>
-        <h1 className="mt-3 text-title">새 프로젝트</h1>
-        <p className="mt-2 text-base text-ink-soft">
+        <h1 className="text-title text-obsidian">새 프로젝트</h1>
+        <p className="mt-2 text-base text-charcoal">
           알고 싶은 것을 적으면 인터뷰 가이드를 만들어 드려요. 참고 자료를 올리면 도메인을 반영해요.
         </p>
 
         <form
           onSubmit={submit}
-          className="mt-8 rounded-xl bg-surface p-5 shadow-card ring-1 ring-line"
+          className="mt-8 rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver"
         >
           <div className="space-y-3">
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">
-                조사 목적 <span className="text-nogo">*</span>
+              <span className="text-meta font-medium text-charcoal">
+                조사 목적 <span className="text-red">*</span>
               </span>
               <input
                 value={purpose}
@@ -83,8 +82,8 @@ export function NewProjectForm() {
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">
-                타깃 대상 <span className="text-nogo">*</span>
+              <span className="text-meta font-medium text-charcoal">
+                타깃 대상 <span className="text-red">*</span>
               </span>
               <input
                 value={target}
@@ -95,8 +94,8 @@ export function NewProjectForm() {
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">
-                동기 <span className="text-nogo">*</span>
+              <span className="text-meta font-medium text-charcoal">
+                동기 <span className="text-red">*</span>
               </span>
               <input
                 value={motivation}
@@ -107,8 +106,8 @@ export function NewProjectForm() {
               />
             </label>
             <label className="block">
-              <span className="text-meta font-medium text-ink-soft">
-                활용 방안 <span className="text-nogo">*</span>
+              <span className="text-meta font-medium text-charcoal">
+                활용 방안 <span className="text-red">*</span>
               </span>
               <input
                 value={utilization}
@@ -121,13 +120,13 @@ export function NewProjectForm() {
 
             {/* 참고 자료 — 입력 필드와 한곳에서 */}
             <div className="pt-1">
-              <span className="text-meta font-medium text-ink-soft">
-                참고 자료 <span className="font-normal text-ink-faint">(선택)</span>
+              <span className="text-meta font-medium text-charcoal">
+                참고 자료 <span className="font-normal text-grey">(선택)</span>
               </span>
-              <p className="mt-0.5 text-2xs text-ink-faint">
+              <p className="mt-0.5 text-2xs text-grey">
                 도메인 자료(.txt · .md · .pdf)를 올리면 그 용어·맥락을 반영해 질문을 만들어요. 긴 파일은 자동 요약돼요.
               </p>
-              <label className="mt-2 inline-flex cursor-pointer items-center rounded-full bg-accent-wash px-4 py-2 text-meta font-medium text-accent ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
+              <label className="mt-2 inline-flex cursor-pointer items-center rounded-full bg-blush px-4 py-2 text-meta font-medium text-red ring-1 ring-red/20 transition-colors hover:bg-red/10">
                 <input
                   type="file"
                   accept=".txt,.md,.pdf"
@@ -136,11 +135,11 @@ export function NewProjectForm() {
                 />
                 {file ? "파일 바꾸기" : "파일 선택"}
               </label>
-              {file && <span className="ml-2 text-meta text-ink-soft">{file.name}</span>}
+              {file && <span className="ml-2 text-meta text-charcoal">{file.name}</span>}
             </div>
           </div>
 
-          {formError && <p className="mt-3 text-meta text-nogo">{formError}</p>}
+          {formError && <p className="mt-3 text-meta text-maroon">{formError}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
             <Button type="submit" disabled={!canSubmit || creating}>
               {creating ? "만드는 중…" : "프로젝트 만들기"}
