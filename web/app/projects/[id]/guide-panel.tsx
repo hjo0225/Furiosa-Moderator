@@ -414,7 +414,7 @@ export function GuidePanel({
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lead font-medium">질문 {questions.length}개</h3>
-          <Button size="sm" variant="outline" onClick={generate} disabled={busy === "generate"}>
+          <Button size="sm" variant="secondary" onClick={generate} disabled={busy === "generate"}>
             {busy === "generate" ? "생성 중…" : "AI로 다시 생성"}
           </Button>
         </div>
@@ -727,7 +727,7 @@ export function GuidePanel({
         <Button onClick={save} disabled={busy === "save" || !dirty}>
           {busy === "save" ? "저장 중…" : dirty ? "가이드 저장" : "저장됨"}
         </Button>
-        <Button variant="outline" onClick={deploy} disabled={busy === "deploy"}>
+        <Button variant="secondary" onClick={deploy} disabled={busy === "deploy"}>
           {busy === "deploy"
             ? "배포 중…"
             : project.status === "deployed"
@@ -754,7 +754,7 @@ export function GuidePanel({
               href={link}
               target="_blank"
               rel="noreferrer"
-              className={buttonVariants({ variant: "outline", size: "sm" })}
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
             >
               새 탭에서 열기
             </a>

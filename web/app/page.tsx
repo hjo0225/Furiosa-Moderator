@@ -42,7 +42,7 @@ export default function LandingPage() {
             <Link href="/projects" className={buttonVariants({ size: "lg" })}>
               프로젝트 만들기
             </Link>
-            <Link href="/projects" className={buttonVariants({ variant: "outline", size: "lg" })}>
+            <Link href="/projects" className={buttonVariants({ variant: "secondary", size: "lg" })}>
               내 프로젝트 보기
             </Link>
           </div>

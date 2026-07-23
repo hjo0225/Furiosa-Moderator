@@ -348,7 +348,7 @@ function QuestionAndAnswer(p: {
           {recorder.supported && (
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               size="lg"
               onClick={() => void toggleRecord()}
               disabled={busy || phase === "transcribing"}

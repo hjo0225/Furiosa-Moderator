@@ -286,7 +286,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lead font-medium">전체 인사이트</h2>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={refreshInsight} disabled={insightBusy}>
+            <Button size="sm" variant="secondary" onClick={refreshInsight} disabled={insightBusy}>
               {insightBusy ? "분석 중…" : insight ? "다시 분석" : "인사이트 생성"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
