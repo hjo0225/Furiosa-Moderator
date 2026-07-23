@@ -6,7 +6,7 @@ import type { Stimulus } from "@/lib/api";
 export function InterviewStimulus({ stimulus }: { stimulus: Stimulus }) {
   return (
     <figure className="flex h-full flex-col gap-2">
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-line bg-line-soft">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-warm-border bg-blush">
         {stimulus.type === "image" ? (
           <img
             src={stimulus.url}
@@ -18,7 +18,7 @@ export function InterviewStimulus({ stimulus }: { stimulus: Stimulus }) {
         )}
       </div>
       {stimulus.caption && (
-        <figcaption className="text-center text-2xs text-ink-faint">{stimulus.caption}</figcaption>
+        <figcaption className="text-center text-2xs text-warm-ink-soft">{stimulus.caption}</figcaption>
       )}
     </figure>
   );

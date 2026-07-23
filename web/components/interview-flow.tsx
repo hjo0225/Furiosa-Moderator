@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Circle, Mic, Square, Volume2 } from "lucide-react";
 
 import { InterviewStimulus } from "@/components/interview-stimulus";
+import { ModeratorAvatar } from "@/components/moderator-avatar";
 import { Button, Card, fieldClass } from "@/components/shared";
 import { useRecorder, useTts } from "@/hooks/useAudio";
 import { sendTurn, submitSession, transcribeAudio, type Stimulus } from "@/lib/api";
@@ -187,9 +188,9 @@ export function InterviewFlow({
   // --- 시작 전 화면 --------------------------------------------------------
   if (phase === "idle") {
     return (
-      <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 p-8 text-center sm:p-10">
+      <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 rounded-xl p-8 text-center ring-warm-border sm:p-10">
         <p className="eyebrow">{en ? "Voice interview" : "음성 인터뷰"}</p>
-        <p className="max-w-md text-lead leading-relaxed text-ink-soft">
+        <p className="max-w-md text-lead leading-relaxed text-warm-ink-soft">
           {en
             ? "A moderator will guide the interview by voice. Answer by speaking or typing, then press Next."
             : "진행자가 음성으로 질문을 드립니다. 말하거나 입력해 답한 뒤 ‘다음’을 눌러 주세요."}
@@ -199,7 +200,7 @@ export function InterviewFlow({
         </Button>
         {error && <p className="text-meta text-nogo">{error}</p>}
         {!tts.available && (
-          <p className="text-2xs text-ink-faint">
+          <p className="text-2xs text-warm-ink-soft">
             {en ? "(Voice playback unavailable — text only)" : "(음성 재생 비활성 — 텍스트로 진행)"}
           </p>
         )}
@@ -213,21 +214,21 @@ export function InterviewFlow({
     toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error,
   };
   return (
-    <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden p-0">
-      {/* 상단 — 진행률 (프로빙 미반영) */}
-      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
-        <p className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-ink-faint">
-          <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+    <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden rounded-xl p-0 ring-warm-border">
+      {/* 상단 — 진행자 오브 + 진행률 (프로빙 미반영) */}
+      <div className="flex items-center justify-between gap-3 border-b border-warm-border px-5 py-3 sm:px-6">
+        <p className="flex items-center gap-2 font-mono text-2xs uppercase tracking-wider text-warm-ink-soft">
+          <ModeratorAvatar speaking={tts.speaking} size={22} />
           {en ? "Moderator" : "진행자"}
         </p>
         {phase !== "review" && phase !== "done" && mainQ > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-2xs font-medium text-ink-faint">
+            <span className="text-2xs font-medium text-warm-ink-soft">
               {en ? `Question ${mainQ}` : `질문 ${mainQ}`}
             </span>
-            <span className="h-1 w-24 overflow-hidden rounded-full bg-line">
+            <span className="h-1 w-24 overflow-hidden rounded-full bg-warm-border">
               <span
-                className="block h-full rounded-full bg-accent-solid transition-[width] duration-500"
+                className="block h-full rounded-full bg-red transition-[width] duration-500"
                 style={{ width: `${Math.min(90, mainQ * 14)}%` }}
               />
             </span>
@@ -240,10 +241,10 @@ export function InterviewFlow({
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="text-title text-ink">{question}</p>
             {phase === "done" ? (
-              <p className="text-meta text-ink-soft">{en ? "Submitted. Thank you!" : "제출됐어요. 감사합니다!"}</p>
+              <p className="text-meta text-warm-ink-soft">{en ? "Submitted. Thank you!" : "제출됐어요. 감사합니다!"}</p>
             ) : (
               <>
-                <p className="text-meta text-ink-soft">
+                <p className="text-meta text-warm-ink-soft">
                   {en
                     ? "That's the end of the interview. Submit to send your answers."
                     : "인터뷰가 끝났어요. 제출해야 답변이 전달됩니다."}
@@ -251,7 +252,7 @@ export function InterviewFlow({
                 <Button type="button" size="lg" onClick={() => void submit()} disabled={submitting} className="w-full max-w-xs">
                   {submitting ? (en ? "Submitting…" : "제출 중…") : en ? "Submit answers" : "답변 제출하기"}
                 </Button>
-                <p className="text-2xs text-ink-faint">
+                <p className="text-2xs text-warm-ink-soft">
                   {en ? "Your answers are only counted once submitted." : "제출하지 않고 창을 닫으면 답변이 집계되지 않아요."}
                 </p>
                 {error && <p className="text-meta text-nogo">{error}</p>}
@@ -264,7 +265,7 @@ export function InterviewFlow({
             <div className="min-h-[16rem] md:min-h-0">
               <InterviewStimulus stimulus={stimulus} />
             </div>
-            <div className="flex min-h-0 flex-col md:border-l md:border-line md:pl-6">
+            <div className="flex min-h-0 flex-col md:border-l md:border-warm-border md:pl-6">
               <QuestionAndAnswer {...qaProps} />
             </div>
           </div>
@@ -293,7 +294,7 @@ function QuestionAndAnswer(p: {
       <div className="flex items-start gap-3">
         <p className="flex-1 text-[1.6rem] font-medium leading-snug tracking-tight text-ink [text-wrap:balance]">
           {busy ? (
-            <span className="animate-pulse text-ink-faint">
+            <span className="animate-pulse text-warm-ink-soft">
               {en ? "Moderator is thinking…" : "진행자가 다음 질문을 준비 중…"}
             </span>
           ) : (
@@ -305,7 +306,7 @@ function QuestionAndAnswer(p: {
         <button
           type="button"
           onClick={() => void tts.speak(question)}
-          className="mt-3 inline-flex items-center gap-1.5 self-start text-meta font-medium text-accent"
+          className="mt-3 inline-flex items-center gap-1.5 self-start text-meta font-medium text-red"
         >
           <Volume2 className="h-4 w-4" aria-hidden="true" />
           {en ? "Replay" : "다시 듣기"}
@@ -315,23 +316,23 @@ function QuestionAndAnswer(p: {
       {/* 답변 */}
       <div className="mt-auto pt-6">
         {voiceFilled && canType && (
-          <p className="mb-2 text-2xs text-ink-faint">
+          <p className="mb-2 text-2xs text-warm-ink-soft">
             {en ? "Here's what we heard — edit it or re-record, then press Next." : "이렇게 들었어요 — 고치거나 다시 녹음한 뒤 ‘다음’을 눌러 주세요."}
           </p>
         )}
         {voiceInput.mode === "text" && recorder.supported && (
-          <p className="mb-2 text-2xs text-ink-faint">
+          <p className="mb-2 text-2xs text-warm-ink-soft">
             {en ? "Switched to typing. The mic still works if you want to try again." : "키보드 입력으로 전환했어요. 마이크는 계속 쓸 수 있어요."}
           </p>
         )}
         {phase === "recording" && (
-          <p className="mb-2 flex items-center gap-1.5 text-meta text-nogo">
-            <Circle className="h-2.5 w-2.5" fill="currentColor" aria-hidden="true" />
-            {en ? "Recording" : "녹음 중"} {recorder.elapsedSec}s
+          <p className="mb-2 flex items-center gap-1.5 text-meta font-medium text-red">
+            <Circle className="h-2.5 w-2.5 animate-pulse" fill="currentColor" aria-hidden="true" />
+            {en ? "Recording" : "녹음 중"} <span className="font-mono tabular-nums">{recorder.elapsedSec}s</span>
           </p>
         )}
         {phase === "transcribing" && (
-          <p className="mb-2 text-meta text-ink-faint">{en ? "Transcribing…" : "음성 인식 중…"}</p>
+          <p className="mb-2 text-meta text-warm-ink-soft">{en ? "Transcribing…" : "음성 인식 중…"}</p>
         )}
         {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
 
@@ -347,7 +348,7 @@ function QuestionAndAnswer(p: {
           rows={3}
           disabled={!canType}
           placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 마이크로 말하세요"}
-          className={fieldClass("min-h-[7rem] w-full resize-none text-lead")}
+          className={fieldClass("min-h-[7rem] w-full resize-none text-lead ring-warm-border")}
         />
         {/* 컨트롤 — 마이크·다음 모두 공유 Button(동일 h-14 pill)으로 통일 */}
         <div className="mt-3 flex items-center gap-2">
@@ -359,7 +360,11 @@ function QuestionAndAnswer(p: {
               onClick={() => void toggleRecord()}
               disabled={busy || phase === "transcribing"}
               aria-label={en ? "Record answer" : "음성으로 답하기"}
-              className={cn("w-14 shrink-0 !px-0", phase === "recording" && "!bg-nogo/10 !text-nogo !ring-nogo/40")}
+              className={cn(
+                "w-14 shrink-0 !px-0 !bg-blush !text-red-dark !ring-warm-border hover:!bg-blush/70",
+                phase === "recording" &&
+                  "!bg-red !text-white !ring-red hover:!bg-red-dark animate-pulse-indigo",
+              )}
             >
               {phase === "recording" ? (
                 <Square className="h-5 w-5" fill="currentColor" aria-hidden="true" />
