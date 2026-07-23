@@ -233,21 +233,25 @@ class CoverageUpdate(BaseModel):
 
 
 class ReflectOut(BaseModel):
-    # max_length=3 — 출력 볼륨 상한(F2: max_tokens 초과 → 전체 재생성 폭주 방지, model_fields 는 그대로)
-    updates: list[CoverageUpdate] = Field(default_factory=list, max_length=3)
+    # max_length=2 — 출력 볼륨 상한(F2: max_tokens 초과 → 전체 재생성 폭주 방지, model_fields 는 그대로).
+    # 라운드2: 모델이 maxItems 를 엄격히 안 지켜 실측 1500 토큰을 넘기고 3000 재생성이 30s
+    # llm_timeout 을 넘겨 턴이 120s 대로 치솟았다 — 스키마 상한과 함께 프롬프트에서도 볼륨을 줄인다.
+    updates: list[CoverageUpdate] = Field(default_factory=list, max_length=2)
 
 
 REFLECT_SYSTEM = (
     "당신은 정성조사 인터뷰의 기록 담당입니다. 방금 나온 응답자 답변을 취재 수첩에 정리합니다.\n"
-    "답변이 실제로 건드린 문항마다 updates 항목을 하나씩 만드세요:\n"
+    "답변이 실제로 다룬 문항에만 updates 항목을 만드세요 — 곁다리로 스칠 수 있었을 문항까지 "
+    "억지로 채우지 마세요:\n"
     "- question_id: 해당 문항 id (아래 목록에 있는 것만)\n"
-    "- facts: 그 문항에 대해 알아낸 사실 (짧은 문장)\n"
-    "- hooks: 걸려 있는데 아직 안 판 떡밥\n"
+    "- facts: 그 문항에 대해 알아낸 사실 (20자 이내 짧은 문장)\n"
+    "- hooks: 걸려 있는데 아직 안 판 떡밥 (20자 이내)\n"
     "- coverage: 그 문항 상태 — 더 나올 수 있으면 touched, '알아낼 것'을 채웠으면 satisfied, "
     "더 캐도 안 나올 것 같으면 saturated\n"
-    "지금 물은 문항이 주로 채워지지만, 답변이 다른 문항까지 답했다면 그 문항도 넣으세요. "
-    "안 건드린 문항은 넣지 마세요.\n"
-    "updates 는 최대 3개, 각 facts·hooks 는 각각 최대 3개까지만 담고 항목마다 짧게 쓰세요."
+    "지금 물은 문항이 주로 채워지지만, 답변이 다른 문항까지 명확히 답했다면 그 문항도 넣으세요. "
+    "실제로 안 건드린 문항은 절대 넣지 마세요.\n"
+    "updates 는 최대 2개, 각 facts·hooks 는 각각 최대 2개까지만 담고 "
+    "각 항목은 20자를 넘기지 않게 짧게 쓰세요."
 )
 
 
