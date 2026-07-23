@@ -27,6 +27,11 @@ next-env.d.ts
 # 에이전트 작업 가이드 — 각자 선호가 달라 공유하지 않는다 (로컬 파일은 유지)
 CLAUDE.md
 
+# harness (harness-template에서 복사 — 프로젝트 코드 아님, 개인 하네스 정책 = gitignore)
+AGENTS.md
+docs/harness/
+.claude/agents/
+
 # 서브에이전트 작업 스크래치 (브리프·리포트·diff·진행원장)
 .superpowers/
 
