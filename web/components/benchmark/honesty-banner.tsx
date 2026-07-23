@@ -1,5 +1,6 @@
 import { Info } from "lucide-react";
 
+import { Card } from "@/components/shared";
 import type { BenchmarkResult } from "@/lib/api";
 
 import { gateStatus } from "./format";
@@ -11,7 +12,7 @@ export function HonestyBanner({ result }: { result: BenchmarkResult }) {
   const gate = gateStatus(result);
 
   return (
-    <div className="rounded-[10px] border border-silver bg-paper p-4">
+    <Card className="border border-silver bg-paper p-4 shadow-none ring-0">
       <div className="flex items-start gap-3">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-grey" aria-hidden="true" />
         <div className="space-y-1.5 text-meta text-charcoal">
@@ -32,6 +33,6 @@ export function HonestyBanner({ result }: { result: BenchmarkResult }) {
           </p>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -106,7 +106,7 @@ export function ProjectsView() {
                   <li key={p.id}>
                     <Link
                       href={`/projects/${p.id}`}
-                      className="block rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver transition-colors hover:bg-paper"
+                      className="block rounded-card bg-white p-5 shadow-card ring-1 ring-silver transition-colors hover:bg-paper"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-base font-medium text-obsidian">
