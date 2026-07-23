@@ -9,9 +9,13 @@ import logging
 import os
 import time
 
+from collections.abc import Iterator
+
 from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from ..config import get_settings
+from ..services.progress import SSE_HEADERS, Event, Pipeline, drain, sse
 from ..briefing import pipeline as briefing_pipeline
 from ..services.material import MaterialError, compose_guide_material, extract_text
 
@@ -217,15 +221,83 @@ def _collect_evidence(pid: str, p) -> str:
     return "\n".join(lines[:9])
 
 
-@router.post("/{pid}/guide", response_model=InterviewGuide)
-def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
-    """C-2 가이드 자동 생성."""
-    p = _require(pid)
+_GUIDE_STEPS = [
+    ("material", "자료 요약 조합"),
+    ("evidence", "근거 검색"),
+    ("audience", "대상 청중 수집"),
+    ("llm", "문항 생성"),
+    ("normalize", "응답 버킷 정규화"),
+    ("quality", "품질 점검"),
+]
+
+
+def _usage_detail(usage) -> dict:
+    """Usage → 진행 이벤트 detail. 실측이 없으면 키 자체를 빼서 화면이 '—'로 두게 한다.
+
+    추정치를 채우지 않는다(design.md §5 "미측정 = —"). 일부 테스트 더블은 usage 자리에
+    None 을 돌려주므로 getattr 로 받는다.
+    """
+    detail: dict = {}
+    model = getattr(usage, "model", None)
+    tokens = getattr(usage, "tokens_out", None)
+    if model:
+        detail["model"] = model
+    if tokens is not None:
+        detail["tokens"] = tokens
+    return detail
+
+
+def _evidence_samples(lines: list[str]) -> list[dict[str, str]]:
+    """발표 화면용 근거 미리보기 — 최대 2건, 각 120자. 자료 본문을 통째로 흘리지 않는다."""
+    out: list[dict[str, str]] = []
+    for ln in lines[:2]:
+        text = ln.lstrip("- ")
+        source = ""
+        if " (출처: " in text:
+            text, _, tail = text.partition(" (출처: ")
+            source = tail.rstrip(")")
+        out.append({"text": text[:120], "source": source})
+    return out
+
+
+def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
+    """C-2 가이드 자동 생성 — 단계마다 이벤트를 흘리고 마지막에 result 를 낸다.
+
+    이 제너레이터가 유일한 구현이다. 비스트림 엔드포인트는 drain 으로 소진하고
+    /stream 은 sse 로 감싼다. p 는 이미 검증된 프로젝트다(404 는 엔드포인트에서).
+    """
+    pid = p.id
     topic = body.topic.strip() or p.topic
     target = body.target.strip() or p.target
-    material = compose_guide_material(store.get_slot_summaries(pid))
-    evidence = _collect_evidence(pid, p)
-    audience = collect_personas(p)   # 글로벌 페르소나 풀 → [대상 청중](코퍼스 비면 "")
+    pipe = Pipeline(_GUIDE_STEPS)
+    yield pipe.declare()
+
+    # 1. 자료 요약 조합
+    yield pipe.start("material")
+    slots = store.get_slot_summaries(pid)
+    material = compose_guide_material(slots)
+    yield pipe.done("material", slots=sum(1 for v in slots.values() if v))
+
+    # 2. RAG 근거 검색 — 자료가 없으면 통째로 건너뛴다(임베딩 호출 자체를 안 한다).
+    yield pipe.start("evidence")
+    if not store.has_materials(pid):
+        evidence = ""
+        yield pipe.skip("evidence", reason="참고 자료 없음")
+    else:
+        evidence = _collect_evidence(pid, p)
+        lines = [ln for ln in evidence.splitlines() if ln.strip()]
+        yield pipe.done("evidence", found=len(lines), samples=_evidence_samples(lines))
+
+    # 3. 대상 청중 — 글로벌 페르소나 풀 → [대상 청중](코퍼스 비면 "")
+    yield pipe.start("audience")
+    audience = collect_personas(p)
+    if audience:
+        yield pipe.done("audience", personas=len(audience.splitlines()))
+    else:
+        yield pipe.skip("audience", reason="페르소나 코퍼스 비어 있음")
+
+    # 4. 문항 생성 (NPU)
+    yield pipe.start("llm")
     t0 = time.perf_counter()
     try:
         guide, usage = get_llm().structured(
@@ -241,26 +313,35 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
             timeout=get_settings().llm_guide_timeout,   # 무거운 단발 생성 — 인터뷰 30s 와 분리
         )
     except LLMError as e:
-        raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e
+        yield pipe.fail("llm", f"가이드 생성에 실패했습니다: {e}", status_code=502)
+        return
     elapsed = time.perf_counter() - t0
     log.info(
         "가이드 생성 완료 (project=%s, tokens_in=%s, tokens_out=%s, elapsed=%.2fs)",
         pid, getattr(usage, "tokens_in", None), getattr(usage, "tokens_out", None), elapsed,
     )
+    yield pipe.done("llm", questions=len(guide.questions), **_usage_detail(usage))
 
-    # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
-    # 사고도 여기서 결정론으로 분리한다.
+    # 5. 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
+    #    사고도 여기서 결정론으로 분리한다.
+    yield pipe.start("normalize")
     for i, q in enumerate(guide.questions):
         _split_goal_from_text(q)
         q.order = i
         q.id = q.id or f"q{i + 1}"
         _normalize_buckets(q)
     guide.goal = guide.goal or topic
+    yield pipe.done("normalize", buckets=sum(len(q.response_buckets) for q in guide.questions))
 
-    # 비차단 품질 로그 (F8) — 매 생성마다 유도신문·버킷 MECE 를 오프라인 규칙으로 자기평가한다.
-    # 로그 전용이다: 반환 가이드를 바꾸지 않고, eval 이 던져도 생성을 막지 않는다.
+    # 6. 저장을 품질 점검보다 먼저 한다 — 스트림이 끊겨도 1분짜리 NPU 작업이 날아가지 않게.
+    #    품질 점검은 반환 가이드를 바꾸지 않는 로그 전용이라 뒤로 가도 의미가 같다.
+    saved = store.save_guide(pid, guide)
+
+    # 7. 비차단 품질 로그 (F8) — 매 생성마다 유도신문·버킷 MECE 를 오프라인 규칙으로 자기평가한다.
+    #    로그 전용이다: 반환 가이드를 바꾸지 않고, eval 이 던져도 생성을 막지 않는다.
+    yield pipe.start("quality")
     try:
-        report = evals.guide_quality_report(guide)
+        report = evals.guide_quality_report(saved)
         if report["n_leading"] or report["bucket_warnings"]:
             log.warning(
                 "guide quality: project=%s n_questions=%d n_leading=%d leading=%s bucket_warnings=%s",
@@ -270,10 +351,29 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
                 report["leading"],
                 report["bucket_warnings"],
             )
-    except Exception:  # noqa: BLE001 — 품질 로그가 가이드 생성을 막아선 안 된다
+        yield pipe.done("quality", leading=report["n_leading"],
+                        warnings=len(report["bucket_warnings"]))
+    except Exception as e:  # noqa: BLE001 — 품질 로그가 가이드 생성을 막아선 안 된다
         log.warning("guide quality eval 실패", exc_info=True)
+        yield pipe.skip("quality", reason=str(e))
 
-    return store.save_guide(pid, guide)
+    # mode="json" 이어야 datetime 이 ISO 문자열로 나온다 — 기본 model_dump 는 datetime
+    # 객체를 그대로 남겨 SSE 직렬화(json.dumps)에서 터진다.
+    yield {"result": saved.model_dump(mode="json")}
+
+
+@router.post("/{pid}/guide", response_model=InterviewGuide)
+def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
+    """C-2 가이드 자동 생성. 스트림과 같은 제너레이터를 소진해 결과만 돌려준다."""
+    return drain(run_guide(_require(pid), body))
+
+
+@router.post("/{pid}/guide/stream")
+def generate_guide_stream(pid: str, body: GuideGenerateIn) -> StreamingResponse:
+    """C-2 가이드 자동 생성 — 진행 화면용 SSE. 404 는 스트림 시작 전에 낸다."""
+    p = _require(pid)
+    return StreamingResponse(sse(run_guide(p, body)),
+                             media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.post("/{pid}/research")
@@ -475,24 +575,48 @@ class _GenInsight(Insight):
     themes: list[_GenTheme]
 
 
-@router.post("/{pid}/insight", response_model=Insight)
-def build_insight(pid: str) -> Insight:
-    """M-4 요약·집계. 완료 세션의 요약을 모아 프로젝트 인사이트를 만든다."""
-    p = _require(pid)
-    guide = store.get_guide(pid)
-    goal = guide.goal if guide else p.topic
+_INSIGHT_STEPS = [
+    ("sessions", "완료 세션 수집"),
+    ("summarize", "세션 요약"),
+    ("insight", "종합 인사이트"),
+    ("counts", "감정·테마·버킷 분포 — DB group-by (LLM 아님)"),
+    ("qsummary", "문항별 요약"),
+]
+
+
+def _completed_sessions(pid: str) -> list:
+    """완료 세션 목록. 없으면 기존과 같은 400 을 낸다(스트림 시작 전에 판정)."""
     sessions = [s for s in store.list_sessions(pid) if s.status == "completed"]
     if not sessions:
         raise HTTPException(400, "완료된 인터뷰가 아직 없습니다.")
+    return sessions
 
+
+def run_insight(p: Project, sessions: list) -> Iterator[Event]:
+    """M-4 요약·집계. 완료 세션의 요약을 모아 프로젝트 인사이트를 만든다."""
+    pid = p.id
+    guide = store.get_guide(pid)
+    goal = guide.goal if guide else p.topic
+    pipe = Pipeline(_INSIGHT_STEPS)
+    yield pipe.declare()
+
+    yield pipe.start("sessions")
+    yield pipe.done("sessions", total=len(sessions))
+
+    # 1. 세션 요약 — 이미 요약이 있으면 LLM 을 안 태운다(재분석이 왜 빠른지 화면에 설명된다)
     llm = get_llm()
+    yield pipe.start("summarize")
     summaries: list[str] = []
-    for s in sessions:
+    cached = 0
+    for i, s in enumerate(sessions, start=1):
         if s.summary:
             summaries.append(s.summary)
+            cached += 1
+            yield pipe.progress("summarize", i, len(sessions))
             continue
         turns = store.list_turns(pid, s.id)
         if not turns:
+            yield pipe.progress("summarize", i, len(sessions))
             continue
         transcript = "\n".join(
             f"{'진행자' if t.role == 'moderator' else '응답자'}: {t.text}" for t in turns
@@ -503,21 +627,28 @@ def build_insight(pid: str) -> Insight:
             )
         except LLMError as e:
             log.warning("세션 요약 실패 (%s): %s", s.id, e)
+            yield pipe.progress("summarize", i, len(sessions))
             continue
         store.update_session(pid, s.id, {"summary": summary})
         summaries.append(summary)
+        yield pipe.progress("summarize", i, len(sessions))
 
     if not summaries:
-        raise HTTPException(502, "세션 요약 생성에 모두 실패했습니다.")
+        yield pipe.fail("summarize", "세션 요약 생성에 모두 실패했습니다.", status_code=502)
+        return
+    yield pipe.done("summarize", done=len(summaries), total=len(sessions), cached=cached)
 
+    # 2. 종합 인사이트
+    yield pipe.start("insight")
     try:
         # _GenInsight — keywords 필수 승격판. required 필드는 자가교정 재시도를 더 자주
         # 태우니 3000→3600(그래도 _STRUCTURED_TOKEN_CEIL=4096 아래)으로 여유를 둔다.
-        insight, _ = llm.structured(
+        insight, usage = llm.structured(
             INSIGHT_SYSTEM, insight_user(p.topic, summaries), _GenInsight, max_tokens=3600
         )
     except LLMError as e:
-        raise HTTPException(502, f"집계 생성에 실패했습니다: {e}") from e
+        yield pipe.fail("insight", f"집계 생성에 실패했습니다: {e}", status_code=502)
+        return
 
     # overall 이 비는 경우가 실제로 나온다(구조화 출력에서 긴 필드가 누락).
     # 대시보드 최상단이라 비어 있으면 티가 크다 — 텍스트 호출로 한 번 더 받는다.
@@ -531,10 +662,12 @@ def build_insight(pid: str) -> Insight:
             )
         except LLMError as e:
             log.warning("overall 재생성 실패: %s", e)
+    yield pipe.done("insight", themes=len(insight.themes), **_usage_detail(usage))
 
-    # LLM 이 낸 '숫자'는 버리고 DB 실측으로 덮어쓴다.
-    # 주제·요약·인용 같은 해석은 LLM 이 잘하지만, 세는 일은 LLM 에게 맡기면 안 된다.
-    # 응답자가 수십 명이 되면 눈대중 카운트는 틀리고, 심사에서 검증도 불가능하다.
+    # 3. LLM 이 낸 '숫자'는 버리고 DB 실측으로 덮어쓴다.
+    #    주제·요약·인용 같은 해석은 LLM 이 잘하지만, 세는 일은 LLM 에게 맡기면 안 된다.
+    #    응답자가 수십 명이 되면 눈대중 카운트는 틀리고, 심사에서 검증도 불가능하다.
+    yield pipe.start("counts")
     insight.sentiment = store.sentiment_counts(pid)
     mentions = store.theme_mention_counts(
         pid, {t.theme: t.keywords for t in insight.themes}
@@ -544,11 +677,16 @@ def build_insight(pid: str) -> Insight:
     # 문항별 응답 버킷 분포도 DB 실측으로 채운다(F6.4) — sentiment 와 같은 계약 1.
     insight.bucket_distribution = store.bucket_distribution(pid)
     insight.session_count = len(summaries)
+    yield pipe.done("counts", source="db-group-by",
+                    sentiment=sum(insight.sentiment.values()),
+                    buckets=len(insight.bucket_distribution))
 
-    # 문항별 AI 요약(F6.3) — 여기부터는 LLM '해석' 출력이다(theme 요약과 같은 계열).
-    # 위 DB 실측 카운트는 절대 건드리지 않는다. best-effort: 실패해도 인사이트 전체를
-    # 막지 않고 문항 요약만 비운 채 진행한다.
+    # 4. 문항별 AI 요약(F6.3) — 여기부터는 LLM '해석' 출력이다(theme 요약과 같은 계열).
+    #    위 DB 실측 카운트는 절대 건드리지 않는다. best-effort: 실패해도 인사이트 전체를
+    #    막지 않고 문항 요약만 비운 채 진행한다.
+    yield pipe.start("qsummary")
     grouped = _answers_by_question([store.list_turns(pid, s.id) for s in sessions])
+    items: list[dict] = []
     if grouped:
         questions = guide.questions if guide else []
         items = [
@@ -556,19 +694,39 @@ def build_insight(pid: str) -> Insight:
             for q in questions
             if grouped.get(q.id)
         ]
-        if items:
-            try:
-                qs_out, _ = llm.structured(
-                    QUESTION_SUMMARY_SYSTEM,
-                    question_summary_user(items),
-                    QuestionSummariesOut,
-                    max_tokens=3000,
-                )
-                insight.question_summaries = qs_out.items
-            except LLMError as e:
-                log.warning("문항별 요약 생성 실패 (project=%s): %s", pid, e)
+    if not items:
+        yield pipe.skip("qsummary", reason="요약할 문항 응답 없음")
+    else:
+        try:
+            qs_out, _ = llm.structured(
+                QUESTION_SUMMARY_SYSTEM,
+                question_summary_user(items),
+                QuestionSummariesOut,
+                max_tokens=3000,
+            )
+            insight.question_summaries = qs_out.items
+            yield pipe.done("qsummary", items=len(qs_out.items))
+        except LLMError as e:
+            log.warning("문항별 요약 생성 실패 (project=%s): %s", pid, e)
+            yield pipe.skip("qsummary", reason=str(e))
 
-    return store.save_insight(pid, insight)
+    yield {"result": store.save_insight(pid, insight).model_dump(mode="json")}
+
+
+@router.post("/{pid}/insight", response_model=Insight)
+def build_insight(pid: str) -> Insight:
+    """M-4 요약·집계. 스트림과 같은 제너레이터를 소진해 결과만 돌려준다."""
+    p = _require(pid)
+    return drain(run_insight(p, _completed_sessions(pid)))
+
+
+@router.post("/{pid}/insight/stream")
+def build_insight_stream(pid: str) -> StreamingResponse:
+    """M-4 요약·집계 — 진행 화면용 SSE. 404·400 은 스트림 시작 전에 낸다."""
+    p = _require(pid)
+    sessions = _completed_sessions(pid)
+    return StreamingResponse(sse(run_insight(p, sessions)),
+                             media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.get("/{pid}/stats")

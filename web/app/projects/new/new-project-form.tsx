@@ -46,7 +46,9 @@ export function NewProjectForm() {
         try {
           await uploadMaterial(p.id, file);
         } catch {
-          // 프로젝트는 이미 생성됨 — 자료 업로드만 실패. 상세로 이동해 이어가게 둔다.
+          // 프로젝트는 이미 생성됨 — 자료 업로드만 실패. 상세로 이동해 이어가게 두되,
+          // 조용히 삼키지 않는다. 삼킨 탓에 angle 누락 422 를 한참 못 봤다.
+          setFormError("프로젝트는 만들었지만 자료 업로드에 실패했어요. 상세에서 다시 올려 주세요.");
         }
       }
       router.push(`/projects/${p.id}`);
