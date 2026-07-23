@@ -265,6 +265,10 @@ def init_schema() -> None:
     api_dir = Path(__file__).resolve().parent.parent   # api/
     cfg = Config(str(api_dir / "alembic.ini"))
     cfg.set_main_option("script_location", str(api_dir / "alembic"))
+    # 기동 시 마이그레이션이 앱 로깅 설정을 갈아엎지 않게 한다(env.py 가 이 플래그를 본다).
+    # 켜두면 루트 핸들러·포맷·레벨이 alembic.ini 것으로 바뀌어 운영 로그의 severity 가
+    # 사라지고 INFO 가 전부 버려진다.
+    cfg.attributes["configure_logger"] = False
 
     eng = _engine()
     with eng.connect() as conn:

@@ -12,12 +12,15 @@ from alembic import context
 from api.services.db import Base, _engine
 
 config = context.config
-if config.config_file_name is not None:
+# 앱 기동 경로(db.py 의 command.upgrade)에서는 로깅 설정을 아예 건드리지 않는다.
+# fileConfig 는 disable_existing_loggers=False 로 불러도 **루트 핸들러·포맷·레벨을
+# alembic.ini 것으로 교체**한다. 그 결과 운영에서 ① 포맷이 `WARNI [name]` 로 바뀌어
+# Cloud Logging 에 severity 필드 없이 stderr 로 나가 `severity>=WARNING` 필터가
+# 아무것도 못 잡고 ② 루트 레벨이 WARN 으로 고정돼 앱의 log.info 가 전부 버려졌다.
+# (실제로 이 때문에 턴 지연 진단을 회귀 빌드 텔레메트리로 세 번 반복했다.)
+# CLI 로 alembic 을 직접 돌릴 때만 ini 의 로깅 설정을 쓴다.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     try:
-        # disable_existing_loggers=False 필수 — 기본값 True 로 두면 기동 시
-        # 실행되는 마이그레이션(db.py 의 command.upgrade)이 fileConfig 를 타면서
-        # import 시점에 만들어진 앱 로거(mindlens, api.services.*, api.interview.*)를
-        # 전부 disable 시켜버려 운영 로그가 전혀 안 찍히는 문제가 있었다.
         fileConfig(config.config_file_name, disable_existing_loggers=False)
     except Exception:   # noqa: BLE001 — 로깅 설정 실패가 마이그레이션을 막지 않게
         pass
