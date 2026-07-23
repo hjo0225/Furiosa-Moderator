@@ -71,7 +71,7 @@ def index_project(pid: str) -> int:
 
 
 def search_chunks(pid: str, query: str, k: int = 3, *,
-                  angle: str | None = None, candidates: int = 30) -> list[dict]:
+                  angle: str | None = None, candidates: int = 12) -> list[dict]:
     """2단 검색 — 코사인으로 candidates 개 넓게 뽑고 리랭커로 top-k 재정렬.
 
     angle 이 주어지면 그 슬롯으로 하드필터(WHERE). 리랭커 실패(LLMError)면 코사인

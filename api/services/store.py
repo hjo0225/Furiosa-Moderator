@@ -101,6 +101,18 @@ def list_materials(pid: str) -> list[Material]:
         return [_material(r) for r in rows]
 
 
+def has_materials(pid: str) -> bool:
+    """프로젝트에 자료가 하나라도 있나 — 존재만 확인할 때는 이걸 쓴다.
+
+    list_materials 는 text 본문까지 전부 SELECT 한다. 가이드 생성처럼 '있는지 없는지'만
+    필요한 호출부에서 list_materials 를 쓰면 불필요하게 무거운 조회가 된다
+    (briefing.pipeline.has_knowledge 와 같은 패턴).
+    """
+    with db_session() as s:
+        stmt = select(MaterialRow.id).where(MaterialRow.project_id == pid).limit(1)
+        return s.execute(stmt).first() is not None
+
+
 def delete_material(pid: str, mid: str) -> None:
     with db_session() as s:
         r = s.get(MaterialRow, mid)

@@ -56,6 +56,7 @@ export function GuidePanel({
   const [dirty, setDirty] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [genElapsed, setGenElapsed] = useState(0);
 
   // 참가 조건 스크리너(F4.3) — 가이드와 별개로 Project 에 붙는다. 자체 dirty/저장을 둔다.
   const [screener, setScreener] = useState<ScreenerQuestion[]>(project.screener ?? []);
@@ -93,6 +94,21 @@ export function GuidePanel({
   useEffect(() => {
     if (project.status === "deployed") setLink(absoluteUrl("", projectId));
   }, [project.status, projectId]);
+
+  // 가이드 생성은 문항·응답 버킷·어휘를 한 번에 만드느라 1분 안팎 걸린다(원인: 구조화
+  // 출력 상한 재조정). 버튼 라벨만으로는 "멈췄나?" 오인을 부르므로 경과초를 보여준다.
+  useEffect(() => {
+    if (busy !== "generate") {
+      setGenElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setGenElapsed(0);
+    const id = window.setInterval(() => {
+      setGenElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [busy]);
 
   const patch = useCallback((updater: (g: InterviewGuide) => InterviewGuide) => {
     setGuide((g) => (g ? updater(g) : g));
@@ -393,6 +409,12 @@ export function GuidePanel({
         <Button className="mt-5" onClick={generate} disabled={busy === "generate"}>
           {busy === "generate" ? "만드는 중…" : "가이드 생성하기"}
         </Button>
+        {busy === "generate" && (
+          <p className="mt-3 text-meta text-ink-soft">
+            가이드를 만드는 중이에요 · {genElapsed}초 — 질문과 응답 버킷을 한 번에 생성하느라 1분 안팎
+            걸립니다.
+          </p>
+        )}
       </Card>
     );
   }
@@ -427,6 +449,12 @@ export function GuidePanel({
         <p className="mt-1 text-meta text-ink-faint">
           진행자가 그대로 읽는 대본이 아니라, 대화에서 반드시 다뤄야 할 주제 목록이에요.
         </p>
+        {busy === "generate" && (
+          <p className="mt-2 text-meta text-ink-soft">
+            가이드를 만드는 중이에요 · {genElapsed}초 — 질문과 응답 버킷을 한 번에 생성하느라 1분 안팎
+            걸립니다.
+          </p>
+        )}
 
         <ul className="mt-4 space-y-3">
           {questions.map((q, i) => (

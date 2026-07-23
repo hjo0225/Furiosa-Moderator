@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
@@ -185,7 +186,7 @@ def _collect_evidence(pid: str, p) -> str:
     안 되므로(레포 관례) 각 검색을 try/except 로 감싸 실패 슬롯은 건너뛴다.
     search_chunks 는 순환 임포트 회피로 로컬 임포트.
     """
-    if not store.list_materials(pid):   # 자료 없으면 임베딩 호출 없이 빠진다(불필요 네트워크 방지)
+    if not store.has_materials(pid):   # 자료 없으면 임베딩 호출 없이 빠진다(불필요 네트워크 방지)
         return ""
     from ..briefing.pipeline import search_chunks
 
@@ -224,17 +225,27 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     material = compose_guide_material(store.get_slot_summaries(pid))
     evidence = _collect_evidence(pid, p)
     audience = collect_personas(p)   # 글로벌 페르소나 풀 → [대상 청중](코퍼스 비면 "")
+    t0 = time.perf_counter()
     try:
-        guide, _ = get_llm().structured(
+        guide, usage = get_llm().structured(
             GUIDE_SYSTEM,
             guide_user(topic, target, material, p.motivation, p.utilization,
                        evidence=evidence, audience=audience),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
-            max_tokens=2000,
+            # 문항별 vocabulary·response_buckets 가 붙으며 출력이 ~7배(≈394→≈2,775 토큰)로
+            # 커졌다. 2000 은 이미 요구 출력보다 작아 매번 truncation 재시도(전체 재생성)가
+            # 걸렸다 — _STRUCTURED_TOKEN_CEIL(4096) 아래에서 넉넉히 4000 으로 올린다.
+            # max_tokens 는 상한일 뿐 안 쓰면 비용이 들지 않는다.
+            max_tokens=4000,
             timeout=get_settings().llm_guide_timeout,   # 무거운 단발 생성 — 인터뷰 30s 와 분리
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e
+    elapsed = time.perf_counter() - t0
+    log.info(
+        "가이드 생성 완료 (project=%s, tokens_in=%s, tokens_out=%s, elapsed=%.2fs)",
+        pid, getattr(usage, "tokens_in", None), getattr(usage, "tokens_out", None), elapsed,
+    )
 
     # 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
     # 사고도 여기서 결정론으로 분리한다.
