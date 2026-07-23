@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 
-import { Button, buttonVariants, Card, PipelineProgress, Skeleton } from "@/components/shared";
+import { Button, buttonVariants, Card, PipelineProgress, Skeleton, useToast } from "@/components/shared";
 import { usePipeline } from "@/lib/pipeline";
 import {
   ApiError,
@@ -66,6 +66,8 @@ export function GuidePanel({
   const [dirty, setDirty] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [justDeployed, setJustDeployed] = useState(false); // 배포 직후 링크 카드 1회 글로우
+  const { show: toast } = useToast();
   const gen = usePipeline<InterviewGuide>();
 
   // 참가 조건 스크리너(F4.3) — 가이드와 별개로 Project 에 붙는다. 자체 dirty/저장을 둔다.
@@ -136,8 +138,10 @@ export function GuidePanel({
       setGuide(saved);
       setDirty(false);
       setMessage("저장했어요.");
+      toast({ tone: "success", message: "가이드를 저장했어요." });
     } catch {
       setError("저장에 실패했어요.");
+      toast({ tone: "error", message: "저장에 실패했어요." });
     } finally {
       setBusy(null);
     }
@@ -148,11 +152,29 @@ export function GuidePanel({
     setError(null);
     try {
       const res = await deployProject(projectId);
-      setLink(absoluteUrl(res.url, projectId));
-      setMessage("배포했어요. 아래 링크를 응답자에게 보내면 됩니다.");
+      const url = absoluteUrl(res.url, projectId);
+      setLink(url);
       onProjectChange();
+      // 데모 하이라이트(생성→배포→공유): 링크를 자동 복사하고 카드에 1회 글로우.
+      let copiedNow = false;
+      try {
+        await navigator.clipboard.writeText(url);
+        copiedNow = true;
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2500);
+      } catch {
+        // 클립보드 권한 없음 — 카드의 복사 버튼으로 하면 된다(폴백).
+      }
+      setJustDeployed(true);
+      window.setTimeout(() => setJustDeployed(false), 1600);
+      setMessage("배포했어요. 아래 링크를 응답자에게 보내면 됩니다.");
+      toast({
+        tone: "success",
+        message: copiedNow ? "배포 완료 · 링크가 복사됐어요" : "배포 완료 · 아래 링크를 공유하세요",
+      });
     } catch {
       setError("배포에 실패했어요.");
+      toast({ tone: "error", message: "배포에 실패했어요." });
     } finally {
       setBusy(null);
     }
@@ -366,6 +388,7 @@ export function GuidePanel({
       setScreener(updated.screener ?? cleaned);
       setScreenerDirty(false);
       setScreenerMsg("참가 조건을 저장했어요.");
+      toast({ tone: "success", message: "참가 조건을 저장했어요." });
       onProjectChange();
     } catch {
       setScreenerErr("참가 조건 저장에 실패했어요.");
@@ -403,6 +426,7 @@ export function GuidePanel({
       setBlocklist(updated.blocklist ?? cleaned);
       setBlocklistDirty(false);
       setBlocklistMsg("금칙어를 저장했어요.");
+      toast({ tone: "success", message: "금칙어를 저장했어요." });
       onProjectChange();
     } catch {
       setBlocklistErr("금칙어 저장에 실패했어요.");
@@ -743,7 +767,7 @@ export function GuidePanel({
         {screenerErr && <p className="mt-3 text-meta text-nogo">{screenerErr}</p>}
 
         <div className="mt-4 flex items-center gap-2">
-          <Button size="sm" onClick={saveScreenerCard} disabled={savingScreener || !screenerDirty}>
+          <Button size="sm" loading={savingScreener} onClick={saveScreenerCard} disabled={savingScreener || !screenerDirty}>
             {savingScreener ? "저장 중…" : screenerDirty ? "참가 조건 저장" : "저장됨"}
           </Button>
           {screenerDirty && (
@@ -797,7 +821,7 @@ export function GuidePanel({
         {blocklistErr && <p className="mt-3 text-meta text-nogo">{blocklistErr}</p>}
 
         <div className="mt-4 flex items-center gap-2">
-          <Button size="sm" onClick={saveBlocklistCard} disabled={savingBlocklist || !blocklistDirty}>
+          <Button size="sm" loading={savingBlocklist} onClick={saveBlocklistCard} disabled={savingBlocklist || !blocklistDirty}>
             {savingBlocklist ? "저장 중…" : blocklistDirty ? "금칙어 저장" : "저장됨"}
           </Button>
           {blocklistDirty && (
@@ -810,10 +834,10 @@ export function GuidePanel({
       {error && <p className="text-meta text-nogo">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={save} disabled={busy === "save" || !dirty}>
+        <Button loading={busy === "save"} onClick={save} disabled={busy === "save" || !dirty}>
           {busy === "save" ? "저장 중…" : dirty ? "가이드 저장" : "저장됨"}
         </Button>
-        <Button variant="secondary" onClick={deploy} disabled={busy === "deploy"}>
+        <Button variant="secondary" loading={busy === "deploy"} onClick={deploy} disabled={busy === "deploy"}>
           {busy === "deploy"
             ? "배포 중…"
             : project.status === "deployed"
@@ -827,7 +851,7 @@ export function GuidePanel({
 
       {/* C-3 응답자 링크 */}
       {link && (
-        <div className="rounded-xl bg-accent-wash p-5 ring-1 ring-accent/20">
+        <div className={cn("animate-reveal rounded-xl bg-accent-wash p-5 ring-1 transition-shadow duration-500", justDeployed ? "ring-accent/50 shadow-[0_0_0_4px_rgba(226,21,0,0.12)]" : "ring-accent/20")}>
           <p className="text-meta font-medium text-ink">응답자용 링크</p>
           <p className="mt-2 break-all rounded-lg bg-surface px-3 py-2 font-mono text-meta text-ink-soft">
             {link}

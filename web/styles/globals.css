@@ -209,6 +209,69 @@
     }
   }
 
+  /* 요소 등장(배포 링크 카드·탭 전환 등) — opacity + 살짝 아래에서 위로. design.md §7 150~300ms.
+     prefers-reduced-motion 은 아래 전역 규칙이 duration 을 0.01ms 로 죽여 자동 처리한다. */
+  .animate-reveal {
+    animation: reveal 300ms ease-out both;
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* 탭·뷰 전환 — 등장만 짧게 페이드(remount 라 exit 없음). design.md §7. */
+  .animate-fade-in {
+    animation: fade-in 200ms ease-out both;
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* 녹음 중 이퀄라이저 바 — "지금 듣고 있다"는 라이브 시그니처(design.md §5 인터뷰).
+     transform:scaleY 만 애니메이트(리페인트 회피). 각 바는 animation-delay 로 엇갈리게 준다.
+     실제 마이크 진폭 메터가 아니라 '녹음 진행' 표시다(오해 없게). reduced-motion 전역 규칙이 끔. */
+  .eq-bar {
+    transform-origin: bottom;
+    animation: eq-bar 0.9s ease-in-out infinite;
+  }
+  @keyframes eq-bar {
+    0%,
+    100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+
+  /* 파이프라인 단계 완료 팝인(check) — design.md §5. */
+  .animate-step-pop {
+    animation: step-pop 200ms ease-out both;
+  }
+  @keyframes step-pop {
+    from {
+      transform: scale(0.7);
+      opacity: 0.4;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
   /* 텔레메트리 수치 전용 — 시스템 monospace. design.md §2: mono 는 이 역할에만 쓰고
      그 외 라벨/메타(font-mono 유틸)는 계속 Pretendard 로 렌더한다(단일 서체 정책 유지).
      숫자 정렬은 tabular-nums 유틸(Tailwind 코어 fontVariantNumeric, 별도 설정 불필요)과 조합해서 쓴다. */

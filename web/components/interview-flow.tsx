@@ -61,6 +61,9 @@ export function InterviewFlow({
   const [mainQ, setMainQ] = useState(0); // 프로빙 제외 '본 질문' 번호 (PRD F5.3: 프로빙은 진행률 미반영)
   const [voiceFilled, setVoiceFilled] = useState(false); // 방금 답변이 음성 전사에서 왔나(확인 안내용)
   const [submitting, setSubmitting] = useState(false);
+  // NPU 왕복 실측 — 발화 요청→응답 도착. "추론이 NPU라서 빠르다"를 화면에 보이게(design.md §5).
+  // 서버 왕복 벽시계라 파이프라인 경과 타이머와 같은 정당성(벤치 값 아님).
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   // 제시 자료는 문항마다 다르다 — 매 턴 응답(out.stimulus)이 실질 소스다. 초기값만 프롭에서 받는다.
   const [stimulus, setStimulus] = useState<Stimulus | undefined>(initialStimulus);
   const started = useRef(false);
@@ -75,8 +78,10 @@ export function InterviewFlow({
     async (text: string) => {
       setPhase("asking");
       setError(null);
+      const t0 = performance.now();
       try {
         const out = await sendTurn(projectId, sessionId, text, en ? "en" : "ko");
+        setLatencyMs(performance.now() - t0);
         setStimulus(out.stimulus ?? undefined); // 이번 문항의 제시 자료로 교체(없으면 단일 컬럼으로 복귀)
         const msg = (out.message ?? "").trim();
         if (msg && !out.done && !out.is_probe) setMainQ((n) => n + 1); // 오프닝·본 질문만 카운트, 프로빙 제외
@@ -213,14 +218,41 @@ export function InterviewFlow({
     en, busy, question, tts, phase, input, setInput, goNext,
     toggleRecord, recorder, voiceFilled, voiceInput, canType, canNext, error,
   };
+
+  // "AI가 지금 뭘 하는지" 한 줄로(design.md §5). tts.speaking 을 phase 보다 먼저 본다
+  // (질문이 나온 뒤 TTS 재생 중엔 phase 가 answering 이라 speaking 으로 덮어써야 한다).
+  const moderatorStatus = tts.speaking
+    ? en ? "Speaking…" : "답하는 중이에요"
+    : phase === "asking"
+      ? en ? "Thinking…" : "생각 중이에요"
+      : phase === "recording"
+        ? en ? "Listening…" : "듣고 있어요"
+        : phase === "transcribing"
+          ? en ? "Transcribing…" : "받아쓰는 중이에요"
+          : "";
+
   return (
     <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden rounded-xl p-0 ring-warm-border">
-      {/* 상단 — 진행자 오브 + 진행률 (프로빙 미반영) */}
+      {/* 상단 — 진행자 오브(목소리 진폭 구동) + 상태 라벨 + NPU 왕복 칩 + 진행률 */}
       <div className="flex items-center justify-between gap-3 border-b border-warm-border px-5 py-3 sm:px-6">
-        <p className="flex items-center gap-2 font-mono text-2xs uppercase tracking-wider text-warm-ink-soft">
-          <ModeratorAvatar speaking={tts.speaking} size={22} />
-          {en ? "Moderator" : "진행자"}
-        </p>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ModeratorAvatar speaking={tts.speaking} getLevel={tts.getLevel} size={34} />
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-warm-ink-soft">
+              {en ? "Moderator" : "진행자"}
+              {latencyMs != null && latencyMs < 20000 && (
+                <span className="rounded bg-blush px-1.5 py-0.5 font-mono text-2xs normal-case tracking-normal text-red-dark tabular-nums">
+                  RNGD · {(latencyMs / 1000).toFixed(2)}s
+                </span>
+              )}
+            </p>
+            {moderatorStatus && (
+              <p className="mt-0.5 truncate text-2xs font-medium text-red" aria-live="polite">
+                {moderatorStatus}
+              </p>
+            )}
+          </div>
+        </div>
         {phase !== "review" && phase !== "done" && mainQ > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-2xs font-medium text-warm-ink-soft">
@@ -329,16 +361,31 @@ function QuestionAndAnswer(p: {
           <p
             role="status"
             aria-live="polite"
-            className="mb-2 flex items-center gap-1.5 text-meta font-medium text-red"
+            className="mb-2 flex items-center gap-2 text-meta font-medium text-red"
           >
             <Circle className="h-2.5 w-2.5 animate-pulse" fill="currentColor" aria-hidden="true" />
-            {en ? "Recording" : "녹음 중"} <span className="font-mono tabular-nums">{recorder.elapsedSec}s</span>
+            {en ? "Recording" : "녹음 중"}
+            {/* 라이브 이퀄라이저 — "듣고 있다"는 시그니처. 5개 바 엇갈린 애니메이션. */}
+            <span className="flex h-4 items-end gap-0.5" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="eq-bar w-0.5 rounded-full bg-red"
+                  style={{ height: "100%", animationDelay: `${i * 0.12}s` }}
+                />
+              ))}
+            </span>
+            <span className="font-mono tabular-nums">{recorder.elapsedSec}s</span>
           </p>
         )}
         {phase === "transcribing" && (
-          <p role="status" aria-live="polite" className="mb-2 text-meta text-warm-ink-soft">
-            {en ? "Transcribing…" : "음성 인식 중…"}
-          </p>
+          <div role="status" aria-live="polite" className="mb-2">
+            <p className="mb-1.5 flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-warm-ink-soft">
+              RNGD · STT <span className="normal-case tracking-normal">{en ? "transcribing" : "받아쓰는 중"}</span>
+            </p>
+            {/* 스켈레톤 시머 한 줄 — 전사 텍스트가 곧 이 자리를 채운다(design.md §5). */}
+            <span className="block h-4 w-2/3 animate-pulse rounded bg-warm-border" />
+          </div>
         )}
         {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
 
