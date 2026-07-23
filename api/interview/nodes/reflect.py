@@ -29,6 +29,13 @@ log = logging.getLogger(__name__)
 # 결론: ReflectOut 은 블로킹 호출로 감당할 크기가 아니다. 상한을 키우지 말고 **빨리 실패**시켜
 # 응답자가 붙잡히는 시간을 묶는다. 원장을 놓치면 다음 턴에 회복된다.
 # 진짜 해법은 reflect 를 응답 반환 뒤로 빼는 구조 변경 — 체크포인트 계약을 건드리므로 별건.
+#
+# max_attempts=1 만으로는 벽시계 상한이 아니었다: LLMClient._call 이 그 안에서 여전히
+# self.max_retries(기본 3)회 전송 재시도를 돌아 한 번의 attempt 가 3×20s + 백오프
+# ≈65s 까지 늘어날 수 있다(실측: max_attempts=1 적용 후에도 ~49s 턴 관측). retries=1 로
+# _call 의 전송 재시도도 1회로 묶어야 진짜 상한이 된다.
+# 결과 상한 ≈20s: 자가교정 시도 1회 × 전송 시도 1회 × timeout 20s. best-effort 부수
+# 작업이라 실패해도 다음 턴에 회복되므로, 재시도로 지연을 사는 것보다 빨리 포기하는 쪽이 낫다.
 _REFLECT_MAX_TOKENS = 1200
 _REFLECT_TIMEOUT_S = 20.0
 
@@ -56,6 +63,8 @@ def reflect_ledger(state: InterviewState) -> dict:
             # 자가교정 사다리(기본 3회)를 끊는다 — best-effort 부수 작업이라 재시도 가치보다
             # 응답자가 기다리는 비용이 크다. 실측: 3회 시도가 최악 ~105s 를 만든다.
             max_attempts=1,
+            # 전송 재시도도 1회로 묶는다 — max_attempts 만으론 벽시계 상한이 아니다(위 주석).
+            retries=1,
         )
     except LLMError as e:
         elapsed = time.monotonic() - started
