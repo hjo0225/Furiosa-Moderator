@@ -85,6 +85,24 @@ def create_project(body: ProjectCreateIn) -> Project:
     )
 
 
+@router.delete("/{pid}")
+def delete_project(pid: str) -> dict:
+    """C-6 프로젝트 삭제 — 가이드·세션·턴·인사이트·자료가 함께 사라진다. 되돌릴 수 없다.
+
+    응답에 함께 지워진 세션 수를 실어 준다: 응답자 데이터가 사라지는 작업이라 "몇 건이
+    사라졌는지"가 화면에도 로그에도 남아야 한다.
+
+    store.delete_project 가 False 를 줘도(=존재 확인과 실제 삭제 사이에 다른 요청이 먼저
+    지운 경우) 200 으로 답한다. 더블클릭·재시도가 실패로 보이면 안 되고, 원하는 최종
+    상태(없음)는 이미 달성됐기 때문이다.
+    """
+    p = _require(pid)
+    sessions = store.count_sessions(pid)
+    store.delete_project(pid)
+    log.warning("프로젝트 삭제 (project=%s, title=%s, sessions=%d)", pid, p.title, sessions)
+    return {"deleted": True, "project_id": pid, "sessions": sessions}
+
+
 @router.put("/{pid}/webhook", response_model=Project)
 def set_webhook(pid: str, body: WebhookSetIn) -> Project:
     """프로젝트별 Discord 웹훅 override 설정. 빈 문자열이면 기본 채널로 폴백."""

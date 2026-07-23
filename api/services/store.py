@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 
 from ..schemas.models import (
@@ -234,6 +235,31 @@ def list_projects(limit: int = 50) -> list[Project]:
         ).all()
         counts = _counts(s, [r.id for r in rows])
         return [_project(r, *counts.get(r.id, (0, 0))) for r in rows]
+
+
+def count_sessions(pid: str) -> int:
+    """이 프로젝트에 달린 세션 수 — 삭제 전 "무엇이 함께 지워지는지" 알리는 데 쓴다."""
+    with db_session() as s:
+        return int(
+            s.scalar(select(func.count()).select_from(SessionRow).where(SessionRow.project_id == pid))
+            or 0
+        )
+
+
+def delete_project(pid: str) -> bool:
+    """프로젝트와 그에 달린 모든 것을 지운다. 반환=실제로 지운 행이 있었는지.
+
+    가이드·세션·턴·인사이트·자료·브리핑 청크·슬롯 요약이 함께 사라진다. **되돌릴 수 없다.**
+    자식 삭제를 파이썬으로 돌지 않고 Core DELETE 한 방으로 보내 DB 의 ON DELETE CASCADE
+    (db.py 의 모든 project_id FK)에 맡긴다 — 파이썬으로 순회하면 테이블이 늘어날 때마다
+    여기를 같이 고쳐야 하고, 빠뜨리면 고아 행이 남는다. 턴은 sessions 를 경유해 지워진다.
+
+    전역 코퍼스(KnowledgeChunkRow)는 project_id 가 없어 대상이 아니다 — 의도된 것이다.
+    """
+    with db_session() as s:
+        res = s.execute(sa_delete(ProjectRow).where(ProjectRow.id == pid))
+        s.commit()
+        return bool(res.rowcount)
 
 
 def update_project(pid: str, patch: dict) -> None:

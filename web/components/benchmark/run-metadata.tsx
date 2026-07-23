@@ -11,7 +11,6 @@ export function RunMetadataAppendix({ result }: { result: BenchmarkResult }) {
     ["SDK 버전", meta.sdk_version],
     ["펌웨어", meta.firmware_version],
     ["드라이버", meta.driver_version],
-    ["모델", meta.model_id],
     ["양자화", meta.quantization],
     ["governor", meta.governor],
     ["prefix caching", meta.prefix_caching],
@@ -19,6 +18,7 @@ export function RunMetadataAppendix({ result }: { result: BenchmarkResult }) {
     ["코퍼스 해시", meta.corpus_hash],
     ["프롬프트 템플릿 해시", meta.prompt_template_hash],
     ["캐시 히트율", meta.cache_hit_rate],
+    ["코드 리비전", meta.code_revision],
     ["측정 시각", result.measured_at],
   ];
 
@@ -35,9 +35,27 @@ export function RunMetadataAppendix({ result }: { result: BenchmarkResult }) {
           </div>
         ))}
       </dl>
+      {/* 모델 배치 — 스펙 §5. 역할별 모델이 다르면 수치를 같은 표에서 비교할 수 없어
+          화면에 항상 적는다(2026-07-23 런은 전 역할 8B 였다). */}
+      <div className="mt-4 border-t border-platinum pt-3">
+        <p className="text-2xs text-grey">모델 배치 (역할별)</p>
+        {result.model_placement.length === 0 ? (
+          <p className="mt-1 font-telemetry text-meta text-obsidian">—</p>
+        ) : (
+          <dl className="mt-1.5 space-y-1">
+            {result.model_placement.map((m) => (
+              <div key={m.role} className="flex flex-wrap gap-x-2 text-2xs">
+                <dt className="text-grey">{m.role}</dt>
+                <dd className="font-telemetry text-obsidian">{m.model}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+
       <p className="mt-4 border-t border-platinum pt-3 text-2xs text-grey">
-        데이터 소스 · PDU 1s · furiosa-metrics-exporter → Prometheus · furiosa-llm /metrics · NTP
-        100ms 이내 동기
+        데이터 소스 · furiosa-smi 카드 센서 1s · furiosa-metrics-exporter → Prometheus ·
+        furiosa-llm /metrics · NTP 100ms 이내 동기
       </p>
     </Card>
   );

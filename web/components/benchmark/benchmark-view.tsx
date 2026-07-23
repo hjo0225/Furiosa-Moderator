@@ -9,11 +9,13 @@ import { Cpu } from "lucide-react";
 import { Container, Skeleton } from "@/components/shared";
 import { fetchBenchmarkResult, type BenchmarkResult } from "@/lib/api";
 
-import { BreakevenPanel } from "./breakeven-panel";
+import { IdleDominancePanel } from "./idle-dominance-panel";
 import { HonestyBanner } from "./honesty-banner";
 import { MetricCards } from "./metric-cards";
 import { PowerTimeseriesChart } from "./power-chart";
-import { ResultsTable } from "./results-table";
+import { LatencyTable } from "./results-table";
+import { OutOfScopePanel } from "./out-of-scope";
+import { TurnBreakdown } from "./turn-breakdown";
 import { RunMetadataAppendix } from "./run-metadata";
 
 export function BenchmarkView() {
@@ -37,8 +39,8 @@ export function BenchmarkView() {
           <h1 className="text-title text-obsidian">성능 · 벤치마크</h1>
         </div>
         <p className="mt-2 max-w-2xl text-base text-charcoal">
-          &ldquo;누가 토큰을 빨리 뽑나&rdquo;가 아니라, 저부하·긴 컨텍스트·짧은 출력 구간에서
-          월 몇 세션부터 RNGD가 대조군보다 유리해지는지를 봅니다.
+          &ldquo;누가 토큰을 빨리 뽑나&rdquo;가 아니라, 이 워크로드에서 <b>지연과 에너지가 어디서
+          나오는지</b>를 봅니다. 대조군이 없으므로 배수 비교는 하지 않습니다.
         </p>
 
         {!result ? (
@@ -55,10 +57,12 @@ export function BenchmarkView() {
         ) : (
           <div className="mt-6 space-y-6">
             <HonestyBanner result={result} />
-            <BreakevenPanel result={result} />
             <MetricCards result={result} />
-            <ResultsTable rows={result.rows} />
+            <LatencyTable rows={result.latency} />
+            <TurnBreakdown result={result} />
+            <IdleDominancePanel result={result} />
             <PowerTimeseriesChart result={result} />
+            <OutOfScopePanel items={result.out_of_scope} />
             <RunMetadataAppendix result={result} />
           </div>
         )}

@@ -2,9 +2,19 @@
 
 // 프로젝트 상세 — 가이드 검토·수정(C-2) + 배포(C-3) | 결과 대시보드(C-4) + 내보내기(C-5).
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 
-import { Badge, type BadgeTone, Container, ErrorState, Skeleton } from "@/components/shared";
-import { getProject, type Project } from "@/lib/api";
+import {
+  Badge,
+  type BadgeTone,
+  Button,
+  ConfirmDialog,
+  Container,
+  ErrorState,
+  Skeleton,
+} from "@/components/shared";
+import { deleteProject, getProject, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { GuidePanel } from "./guide-panel";
@@ -25,9 +35,13 @@ const STATUS_TONE: Record<Project["status"], BadgeTone> = {
 };
 
 export function ProjectView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<Tab>("guide");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     getProject(projectId)
@@ -84,7 +98,18 @@ export function ProjectView({ projectId }: { projectId: string }) {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <h1 className="text-title text-obsidian">{project.title || project.topic}</h1>
               <Badge tone={STATUS_TONE[project.status]}>{STATUS_LABEL[project.status]}</Badge>
+              {/* 파괴적 액션은 제목 줄 끝에 조용히 둔다 — 눈에 띄되 먼저 눌리지 않게 ghost. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmDelete(true)}
+                className="ml-auto gap-1.5 text-grey hover:text-maroon"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                삭제
+              </Button>
             </div>
+            {deleteError && <p className="mt-1 text-meta text-maroon">{deleteError}</p>}
             <p className="mt-1 text-base text-charcoal">{project.topic}</p>
             {project.target && (
               <p className="mt-0.5 text-meta text-grey">대상 · {project.target}</p>
@@ -127,6 +152,35 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 <ResultsPanel projectId={projectId} />
               )}
             </div>
+            <ConfirmDialog
+              open={confirmDelete}
+              busy={deleting}
+              title="이 프로젝트를 삭제할까요?"
+              body={
+                <>
+                  <b className="text-obsidian">{project.title || project.topic}</b> 와 함께{" "}
+                  <b className="text-obsidian">응답 {project.completed_count}건</b>
+                  {project.session_count > project.completed_count &&
+                    ` · 진행중 ${project.session_count - project.completed_count}건`}
+                  , 인터뷰 가이드, 분석 결과, 업로드한 자료가 모두 지워집니다.{" "}
+                  <b className="text-maroon">되돌릴 수 없어요.</b>
+                </>
+              }
+              confirmLabel="삭제"
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={async () => {
+                setDeleting(true);
+                setDeleteError(null);
+                try {
+                  await deleteProject(projectId);
+                  router.push("/projects");
+                } catch {
+                  setDeleteError("삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
+                  setDeleting(false);
+                  setConfirmDelete(false);
+                }
+              }}
+            />
           </>
         )}
       </Container>
