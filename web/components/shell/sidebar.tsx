@@ -4,7 +4,7 @@
 // 무인증 MVP: 워크스페이스 전환·계정 메뉴·유저 아바타 없음. 대신 푸터에
 // "로그인 없이, 링크만 공유" 안내를 둬서 무인증을 특징으로 드러낸다.
 import type { LucideIcon } from "lucide-react";
-import { Cpu, Folder, Link as LinkIcon, Menu, Plus, Search, X } from "lucide-react";
+import { Cpu, Folder, Link as LinkIcon, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -157,16 +157,8 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
           })}
         </nav>
 
-        <div className="px-3 pb-4">
-          <Link
-            href="/projects/new"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-red px-3 py-2.5 text-base font-medium text-white transition-colors hover:bg-red-dark active:translate-y-px"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            새 프로젝트
-          </Link>
-        </div>
+        {/* '새 프로젝트' CTA 는 각 페이지 헤더에만 둔다 — 사이드바에도 두면 첫 화면에
+            같은 버튼이 두 개 보인다(종합 리뷰 지적). */}
 
         {/* 푸터 — 계정 메뉴가 아니다. 무인증 MVP 안내(design.md §5). */}
         <div className="flex items-center gap-2 border-t border-silver px-5 py-4 text-meta text-grey">
