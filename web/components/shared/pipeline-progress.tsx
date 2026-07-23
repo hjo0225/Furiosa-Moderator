@@ -17,7 +17,9 @@ function clock(ms: number): string {
 
 function StepIcon({ status }: { status: StepView["status"] }) {
   const base = "h-4 w-4 shrink-0";
-  if (status === "done") return <Check className={cn(base, "text-go")} aria-hidden="true" />;
+  // 완료 순간 check 가 팝인(scale 0.8→1) — 단계가 "탁" 찍히는 느낌(design.md §5).
+  if (status === "done")
+    return <Check className={cn(base, "animate-step-pop text-go")} aria-hidden="true" />;
   if (status === "run")
     return <Loader2 className={cn(base, "animate-spin text-red")} aria-hidden="true" />;
   if (status === "skip") return <Minus className={cn(base, "text-ink-faint")} aria-hidden="true" />;
@@ -74,9 +76,16 @@ export function PipelineProgress({ title, state, onDetach, onRetry }: PipelinePr
         {clock(state.elapsedMs)}
       </p>
 
-      <ul className="mt-8 w-full max-w-md space-y-3">
+      <ul className="mt-8 w-full max-w-md space-y-1.5">
         {state.steps.map((step) => (
-          <li key={step.key} className="flex items-start gap-3">
+          <li
+            key={step.key}
+            className={cn(
+              "flex items-start gap-3 rounded-lg px-3 py-2 transition-colors duration-200",
+              // 현재 도는 단계를 red 좌보더 + 옅은 배경으로 강조(design.md §5).
+              step.status === "run" ? "border-l-2 border-red bg-red/5" : "border-l-2 border-transparent",
+            )}
+          >
             <span className="mt-1">
               <StepIcon status={step.status} />
             </span>

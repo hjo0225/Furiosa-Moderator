@@ -475,6 +475,8 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         ))}
       </div>
 
+      {/* key={view} 로 하위 탭 전환에 짧은 페이드(design.md §7). */}
+      <div key={view} className="animate-fade-in">
       {view === "summary" && (
         <section className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -710,6 +712,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         )}
         </section>
       )}
+      </div>
     </div>
   );
 }

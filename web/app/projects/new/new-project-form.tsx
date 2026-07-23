@@ -126,7 +126,8 @@ export function NewProjectForm() {
           setFormError("프로젝트는 만들었지만 자료 업로드에 실패했어요. 상세에서 다시 올려 주세요.");
         }
       }
-      router.push(`/projects/${p.id}`);
+      // ?created=1 로 도착지(project-view)에 성공 토스트를 캐리오버한다.
+      router.push(`/projects/${p.id}?created=1`);
     } catch {
       setFormError("프로젝트를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       setCreating(false);
