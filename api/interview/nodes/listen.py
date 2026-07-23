@@ -15,7 +15,7 @@ from ...services.llm_client import get_llm
 from ..prompts import ANALYST_SYSTEM, ListenOut, analysis_user
 from ..state import InterviewState
 from ..tools.pace import pace
-from .strategize import MAX_ASKED
+from .strategize import max_turns
 
 
 def listen(state: InterviewState) -> dict:
@@ -35,7 +35,8 @@ def listen(state: InterviewState) -> dict:
         analysis_user(
             state["guide"], state.get("messages", []), utterance,
             state.get("asked", 0), state.get("probe_streak", 0), ledger,
-            pace_line=pace(state.get("asked", 0), MAX_ASKED, pending_n),   # 도구: 페이스 (결정론)
+            # 도구: 페이스 (결정론) — 예산은 가이드에서 나온다(주제별 질문수+1 의 합)
+            pace_line=pace(state.get("asked", 0), max_turns(state["guide"]), pending_n),
             current_qid=prev_qid,   # 지금 문항의 응답 버킷을 프롬프트에 실어 버킷 적합도 판단 (F5.1)
         ),
         ListenOut,

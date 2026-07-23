@@ -1,7 +1,7 @@
 """인터뷰 그래프 단위테스트 — 네트워크·DB 없이 InMemorySaver 로.
 
 검증 대상: interrupt 루프, 노드 배선(T3: 행동 조건 엣지 + farewell), 결정론
-(12턴·정직종료·revisit 검증), guard 적용 조건, speak 의 저장·세션 갱신.
+(턴 예산·정직종료·revisit 검증), guard 적용 조건, speak 의 저장·세션 갱신.
 LLM(분석 structured / 생성 text)과 store 는 가짜로 대체한다.
 """
 from __future__ import annotations
@@ -13,12 +13,19 @@ from langgraph.types import Command
 from api.interview.graph import build_graph
 from api.interview.prompts import CoverageUpdate, ListenOut, ReflectOut
 from api.interview.state import init_ledger
-from api.schemas.models import GuideQuestion, InterviewGuide, Project, Turn
+from api.schemas.models import GuideQuestion, GuideTopic, InterviewGuide, Project, Turn
 
+# 주제 2개 × 질문 1개 → 예산 (1+1)+(1+1) = 4턴. 이 파일의 시나리오(최대 3턴)가 예산에
+# 걸리지 않게 잡은 값이다 — 예산이 종료를 가로채면 model_done 경로를 검증할 수 없다.
+# 평면 questions 는 InterviewGuide 가 topics 에서 파생해 주므로 원장은 q1·q2 그대로다.
 GUIDE = InterviewGuide(
     project_id="p1", goal="배달앱 전환 요인",
-    questions=[GuideQuestion(id="q1", text="어떤 앱을 쓰세요?", goal="현재 사용 앱"),
-               GuideQuestion(id="q2", text="갈아탄 계기는?", goal="전환 트리거")],
+    topics=[
+        GuideTopic(id="t1", title="현재 사용", order=0, questions=[
+            GuideQuestion(id="q1", text="어떤 앱을 쓰세요?", goal="현재 사용 앱")]),
+        GuideTopic(id="t2", title="전환", order=1, questions=[
+            GuideQuestion(id="q2", text="갈아탄 계기는?", goal="전환 트리거")]),
+    ],
 )
 
 
@@ -90,11 +97,11 @@ def fakes(monkeypatch):
     return fs, set_llm
 
 
-def _start(g, config):
+def _start(g, config, guide: InterviewGuide = GUIDE):
     return g.invoke(
         {"project_id": "p1", "session_id": "s1", "lang": "ko",
-         "guide": GUIDE.model_dump(), "covered": [], "asked": 0,
-         "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
+         "guide": guide.model_dump(), "covered": [], "asked": 0,
+         "messages": [], "ledger": init_ledger(guide.model_dump()), "probe_streak": 0},
         config,
     )
 
@@ -138,13 +145,13 @@ def test_resume_probe_then_close_ends(fakes):
     assert fs.session_patches[-1]["status"] == "pending"  # 제출(R-4) 전까지는 completed 아님
 
 
-def test_12turn_hard_guard_forces_close(fakes):
+def test_budget_hard_guard_forces_close(fakes):
     fs, set_llm = fakes
     set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut()],
             texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
-    # asked 는 State 소유 — 이미 11회 물은 세션으로 시작 (이어하기 시나리오)
+    # asked 는 State 소유 — GUIDE 예산(4턴)을 이미 넘긴 세션으로 시작 (이어하기 시나리오)
     g.invoke({"project_id": "p1", "session_id": "s1", "lang": "ko",
               "guide": GUIDE.model_dump(), "covered": [], "asked": 11,
               "messages": [], "ledger": init_ledger(GUIDE.model_dump()), "probe_streak": 0},
@@ -281,14 +288,15 @@ def test_honest_close_when_all_satisfied(fakes):
 
 # --- T3: 행동 7종 ---------------------------------------------------------------
 
-def test_new_actions_reach_generate_with_directives(fakes):
+# challenge·redirect 를 한 시나리오에 이어 붙이지 않는다 — 같은 질문에서 2턴을 쓰면 주제의
+# 여유 1턴이 소진돼 그 다음 파고들기는 강제 advance 로 강등된다(설계대로). 각각 여유가 있는
+# 2번째 턴에서 검증한다.
+def test_challenge_reaches_generate_with_contradiction(fakes):
     fs, set_llm = fakes
     llm = set_llm(
         outs=[ListenOut(action="challenge", contradiction="가격 안 본다더니 최저가만 찾음"),
-              ReflectOut(),
-              ListenOut(action="redirect"),
               ReflectOut()],
-        texts=["오프닝?", "챌린지 질문?", "복귀 질문?"],
+        texts=["오프닝?", "챌린지 질문?"],
     )
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -296,7 +304,16 @@ def test_new_actions_reach_generate_with_directives(fakes):
     r = g.invoke(Command(resume="무조건 최저가요"), config)
     assert r["message"] == "챌린지 질문?"
     assert "가격 안 본다더니" in llm.text_prompts[-1]        # 모순이 생성 프롬프트에 실림
-    r = g.invoke(Command(resume="근데 어제 축구 봤는데요"), config)
+
+
+def test_redirect_reaches_generate_with_directive(fakes):
+    fs, set_llm = fakes
+    llm = set_llm(outs=[ListenOut(action="redirect"), ReflectOut()],
+                  texts=["오프닝?", "복귀 질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="근데 어제 축구 봤는데요"), config)
     assert "부드럽게 원래 주제로" in llm.text_prompts[-1]     # redirect 지시
 
 

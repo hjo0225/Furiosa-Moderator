@@ -19,7 +19,11 @@ class CoverageEntry(TypedDict):
 
 
 def init_ledger(guide: dict) -> dict[str, CoverageEntry]:
-    """가이드 문항 전부를 pending 원장으로."""
+    """가이드 문항 전부를 pending 원장으로.
+
+    원장은 계속 **질문 단위**다 — 주제가 생겼어도 커버리지·버킷은 질문에 달려 있다.
+    평면 `questions` 는 `InterviewGuide` 가 topics 에서 파생해 주므로 여기선 그대로 읽는다.
+    """
     return {
         q["id"]: CoverageEntry(status="pending", facts=[], hooks=[])
         for q in guide.get("questions", [])
@@ -40,8 +44,10 @@ class InterviewState(TypedDict, total=False):
     covered: list[str]         # 대시보드용 출석부 — sessions.covered 와 동기
     asked: int                 # 진행자 질문 수 (speak 가 +1)
     probe_streak: int          # 현 문항 연속 꼬리질문(probe/clarify) 수 (speak 가 갱신, 보강 A 상한 대상)
-    q_streak: int              # 현 문항에 머문 총 턴 수(probe 아니어도 셈) — 강제 advance 상한 대상
+    q_streak: int              # 현 문항에 머문 총 턴 수(probe 아니어도 셈) — 진단·로그용
     q_streak_qid: str          # q_streak 가 세는 문항 id (문항이 바뀌면 1로 리셋)
+    t_streak: int              # 현 주제에 쓴 총 턴 수 — 주제 예산(질문수+1)과 비교해 강제 advance
+    t_streak_tid: str          # t_streak 가 세는 주제 id (주제가 바뀌면 1로 리셋)
 
     # 턴 스크래치 — 매 턴 덮어씀
     utterance: str

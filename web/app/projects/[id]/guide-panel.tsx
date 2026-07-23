@@ -10,10 +10,12 @@ import {
   ApiError,
   deployProject,
   getGuide,
+  guideMaxTurns,
   saveBlocklist,
   saveGuide,
   saveScreener,
   type GuideQuestion,
+  type GuideTopic,
   type InterviewGuide,
   type Project,
   type ResponseBucket,
@@ -30,6 +32,14 @@ function newQuestionId(): string {
     return crypto.randomUUID();
   } catch {
     return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+function newTopicId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 
@@ -159,95 +169,146 @@ export function GuidePanel({
     }
   }
 
+  const topics = guide?.topics ?? [];
   const questions = guide?.questions ?? [];
+  // 최대 턴 = 주제별(질문수+1)의 합. 엔진에 전체 상한이 없으므로 여기가 유일하게
+  // "인터뷰가 얼마나 길어지는가"를 의뢰자에게 보여주는 자리다(design.md §5).
+  const maxTurns = guide ? guideMaxTurns(guide) : 0;
+
+  /** 구조 재조립의 유일한 통로 — 평면 questions 뷰를 topics 에서 다시 파생시키고 순번을 매긴다. */
+  function withTopics(g: InterviewGuide, next: GuideTopic[]): InterviewGuide {
+    let n = 0;
+    const renumbered = next.map((t, ti) => ({
+      ...t,
+      order: ti,
+      questions: t.questions.map((q) => ({ ...q, order: n++ })),
+    }));
+    return { ...g, topics: renumbered, questions: renumbered.flatMap((t) => t.questions) };
+  }
+
+  /** 평면 인덱스 idx 의 질문 하나만 교체. 편집 핸들러들은 계속 평면 좌표로 말한다. */
+  function mapQuestionAt(idx: number, fn: (q: GuideQuestion) => GuideQuestion) {
+    patch((g) => {
+      let n = 0;
+      return withTopics(
+        g,
+        g.topics.map((t) => ({
+          ...t,
+          questions: t.questions.map((q) => (n++ === idx ? fn(q) : q)),
+        })),
+      );
+    });
+  }
 
   function updateQuestion(idx: number, field: keyof GuideQuestion, value: string) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.map((q, i) => (i === idx ? { ...q, [field]: value } : q)),
-    }));
+    mapQuestionAt(idx, (q) => ({ ...q, [field]: value }));
   }
 
   function removeQuestion(idx: number) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.filter((_, i) => i !== idx).map((q, i) => ({ ...q, order: i })),
-    }));
+    patch((g) => {
+      let n = 0;
+      return withTopics(
+        g,
+        g.topics.map((t) => ({ ...t, questions: t.questions.filter(() => n++ !== idx) })),
+      );
+    });
   }
 
   // 제시 자료(선택) — 문항 하나에 이미지/영상 URL+캡션을 붙인다. URL 을 비우면 자료 자체를 해제한다
   // (빈 액자를 응답자에게 띄우지 않으려는 것 — 백엔드도 빈 URL 을 걸러낸다).
   function setStimulusField(qi: number, field: keyof Stimulus, value: string) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.map((q, i) => {
-        if (i !== qi) return q;
-        const cur: Stimulus = q.stimulus ?? { type: "image", url: "", caption: "" };
-        const next: Stimulus = { ...cur, [field]: value };
-        return { ...q, stimulus: field === "url" && !value.trim() ? undefined : next };
-      }),
-    }));
-  }
-
-  function updateBucket(qi: number, bi: number, field: "label" | "definition", value: string) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.map((q, i) =>
-        i === qi
-          ? { ...q, response_buckets: q.response_buckets.map((b, j) => (j === bi ? { ...b, [field]: value } : b)) }
-          : q,
-      ),
-    }));
-  }
-  function removeBucket(qi: number, bi: number) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.map((q, i) =>
-        i === qi ? { ...q, response_buckets: q.response_buckets.filter((_, j) => j !== bi) } : q,
-      ),
-    }));
-  }
-  function addBucket(qi: number) {
-    patch((g) => ({
-      ...g,
-      questions: g.questions.map((q, i) =>
-        i === qi
-          ? {
-              ...q,
-              response_buckets: [
-                ...q.response_buckets,
-                {
-                  id: `${q.id}_b${q.response_buckets.length + 1}`,
-                  label: "",
-                  definition: "",
-                  is_catchall: false,
-                  is_negative_case: false,
-                } satisfies ResponseBucket,
-              ],
-            }
-          : q,
-      ),
-    }));
-  }
-
-  function moveQuestion(idx: number, dir: -1 | 1) {
-    const to = idx + dir;
-    patch((g) => {
-      if (to < 0 || to >= g.questions.length) return g;
-      const next = [...g.questions];
-      [next[idx], next[to]] = [next[to], next[idx]];
-      return { ...g, questions: next.map((q, i) => ({ ...q, order: i })) };
+    mapQuestionAt(qi, (q) => {
+      const cur: Stimulus = q.stimulus ?? { type: "image", url: "", caption: "" };
+      const next: Stimulus = { ...cur, [field]: value };
+      return { ...q, stimulus: field === "url" && !value.trim() ? undefined : next };
     });
   }
 
-  function addQuestion() {
-    patch((g) => ({
-      ...g,
-      questions: [
-        ...g.questions,
-        { id: newQuestionId(), text: "", goal: "", order: g.questions.length, response_buckets: [] },
+  function updateBucket(qi: number, bi: number, field: "label" | "definition", value: string) {
+    mapQuestionAt(qi, (q) => ({
+      ...q,
+      response_buckets: q.response_buckets.map((b, j) => (j === bi ? { ...b, [field]: value } : b)),
+    }));
+  }
+  function removeBucket(qi: number, bi: number) {
+    mapQuestionAt(qi, (q) => ({
+      ...q,
+      response_buckets: q.response_buckets.filter((_, j) => j !== bi),
+    }));
+  }
+  function addBucket(qi: number) {
+    mapQuestionAt(qi, (q) => ({
+      ...q,
+      response_buckets: [
+        ...q.response_buckets,
+        {
+          id: `${q.id}_b${q.response_buckets.length + 1}`,
+          label: "",
+          definition: "",
+          is_catchall: false,
+          is_negative_case: false,
+        } satisfies ResponseBucket,
       ],
     }));
+  }
+
+  /** 질문 이동은 **같은 주제 안에서만** 한다 — 주제를 넘나들면 버킷이 엉뚱한 주제에 붙는다. */
+  function moveQuestion(ti: number, qi: number, dir: -1 | 1) {
+    patch((g) => {
+      const t = g.topics[ti];
+      const to = qi + dir;
+      if (!t || to < 0 || to >= t.questions.length) return g;
+      const qs = [...t.questions];
+      [qs[qi], qs[to]] = [qs[to], qs[qi]];
+      return withTopics(g, g.topics.map((x, i) => (i === ti ? { ...x, questions: qs } : x)));
+    });
+  }
+
+  function addQuestion(ti: number) {
+    patch((g) =>
+      withTopics(
+        g,
+        g.topics.map((t, i) =>
+          i === ti
+            ? {
+                ...t,
+                questions: [
+                  ...t.questions,
+                  { id: newQuestionId(), text: "", goal: "", order: 0, response_buckets: [] },
+                ],
+              }
+            : t,
+        ),
+      ),
+    );
+  }
+
+  // --- 주제 편집 ------------------------------------------------------------
+  function updateTopic(ti: number, field: "title" | "goal", value: string) {
+    patch((g) => withTopics(g, g.topics.map((t, i) => (i === ti ? { ...t, [field]: value } : t))));
+  }
+
+  function removeTopic(ti: number) {
+    patch((g) => withTopics(g, g.topics.filter((_, i) => i !== ti)));
+  }
+
+  function moveTopic(ti: number, dir: -1 | 1) {
+    patch((g) => {
+      const to = ti + dir;
+      if (to < 0 || to >= g.topics.length) return g;
+      const next = [...g.topics];
+      [next[ti], next[to]] = [next[to], next[ti]];
+      return withTopics(g, next);
+    });
+  }
+
+  function addTopic() {
+    patch((g) =>
+      withTopics(g, [
+        ...g.topics,
+        { id: newTopicId(), title: "", goal: "", order: 0, questions: [] },
+      ]),
+    );
   }
 
   // --- 참가 조건 스크리너(F4.3) 편집 --------------------------------------
@@ -433,17 +494,77 @@ export function GuidePanel({
       {/* 문항 */}
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-lead font-medium">질문 {questions.length}개</h3>
-          <Button size="sm" variant="secondary" onClick={generate}>
-            AI로 다시 생성
-          </Button>
+          <h3 className="text-lead font-medium">주제 {topics.length}개 · 질문 {questions.length}개</h3>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-surface px-2.5 py-1 font-mono text-2xs text-ink-soft ring-1 ring-line">
+              최대 {maxTurns}턴
+            </span>
+            <Button size="sm" variant="secondary" onClick={generate}>
+              AI로 다시 생성
+            </Button>
+          </div>
         </div>
         <p className="mt-1 text-meta text-ink-faint">
           진행자가 그대로 읽는 대본이 아니라, 대화에서 반드시 다뤄야 할 주제 목록이에요.
+          주제마다 <b className="text-ink-soft">질문수 + 1턴</b>을 쓰고, 남는 1턴으로 파고듭니다.
         </p>
 
-        <ul className="mt-4 space-y-3">
-          {questions.map((q, i) => (
+        <ul className="mt-4 space-y-4">
+          {topics.map((t, ti) => (
+            <li key={t.id || ti} className="rounded-xl bg-surface p-4 ring-1 ring-line">
+              <div className="flex items-start gap-2">
+                <span className="mt-2.5 shrink-0 font-mono text-2xs text-ink-faint">T{ti + 1}</span>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <input
+                    value={t.title}
+                    onChange={(e) => updateTopic(ti, "title", e.target.value)}
+                    placeholder="주제 이름 (예: 앱 선택 기준)"
+                    className={cn(inputCls, "font-medium")}
+                  />
+                  <input
+                    value={t.goal}
+                    onChange={(e) => updateTopic(ti, "goal", e.target.value)}
+                    placeholder="이 주제로 알아내려는 것 (선택)"
+                    className={cn(inputCls, "text-meta")}
+                  />
+                </div>
+                <div className="flex shrink-0 flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => moveTopic(ti, -1)}
+                    disabled={ti === 0}
+                    aria-label="주제 위로"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveTopic(ti, 1)}
+                    disabled={ti === topics.length - 1}
+                    aria-label="주제 아래로"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeTopic(ti)}
+                    aria-label="주제 삭제"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 pl-6 font-mono text-2xs text-ink-faint">
+                질문 {t.questions.length}개 · 이 주제 {t.questions.length + 1}턴
+              </p>
+
+              <ul className="mt-3 space-y-3 pl-6">
+              {t.questions.map((q, qi) => {
+                const i = topics.slice(0, ti).reduce((n, x) => n + x.questions.length, 0) + qi;
+                return (
             <li key={q.id || i} className="rounded-lg bg-bg p-4 ring-1 ring-line">
               <div className="flex items-start justify-between gap-2">
                 <span className="mt-2.5 font-mono text-2xs text-ink-faint">Q{i + 1}</span>
@@ -551,8 +672,8 @@ export function GuidePanel({
                 <div className="flex shrink-0 flex-col gap-1">
                   <button
                     type="button"
-                    onClick={() => moveQuestion(i, -1)}
-                    disabled={i === 0}
+                    onClick={() => moveQuestion(ti, qi, -1)}
+                    disabled={qi === 0}
                     aria-label="위로"
                     className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
                   >
@@ -560,8 +681,8 @@ export function GuidePanel({
                   </button>
                   <button
                     type="button"
-                    onClick={() => moveQuestion(i, 1)}
-                    disabled={i === questions.length - 1}
+                    onClick={() => moveQuestion(ti, qi, 1)}
+                    disabled={qi === t.questions.length - 1}
                     aria-label="아래로"
                     className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
                   >
@@ -578,11 +699,19 @@ export function GuidePanel({
                 </div>
               </div>
             </li>
+                );
+              })}
+              </ul>
+
+              <Button size="sm" variant="ghost" className="ml-6 mt-2" onClick={() => addQuestion(ti)}>
+                + 질문 추가
+              </Button>
+            </li>
           ))}
         </ul>
 
-        <Button size="sm" variant="ghost" className="mt-3" onClick={addQuestion}>
-          + 질문 추가
+        <Button size="sm" variant="ghost" className="mt-3" onClick={addTopic}>
+          + 주제 추가
         </Button>
       </Card>
 

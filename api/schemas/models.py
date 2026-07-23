@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _now() -> datetime:
@@ -91,9 +91,36 @@ class GuideQuestion(BaseModel):
     stimulus: Stimulus | None = None
 
 
+class GuideTopic(BaseModel):
+    """주제 — 질문 여러 개를 묶는 단위 (스펙 `docs/specs/2026-07-24-guide-topics-turn-budget.md`).
+
+    **턴 예산이 이 단위로 잡힌다: 주제당 질문수 + 1.** `+1` 은 꼬리질문 몫이다 —
+    질문마다 최소 1턴을 써야 그 질문의 버킷이 채워지므로 질문 수만큼은 반드시 확보하고
+    남는 1턴을 진행자가 주제 안 어디에든 쓴다.
+
+    버킷은 주제가 아니라 **질문**에 붙는다. 코드북·프로빙 목표가 질문 단위로 동작하고
+    분류 결과가 `turns.bucket_id` 에 질문 기준으로 쌓이기 때문이다(reflect_bucket).
+    """
+    id: str = ""
+    title: str = ""
+    goal: str = ""          # 이 주제로 알아내려는 것
+    order: int = 0
+    questions: list[GuideQuestion] = Field(default_factory=list)
+
+
 class InterviewGuide(BaseModel):
+    """가이드 — 주제 > 질문 2단.
+
+    `topics` 가 정본이고 `questions` 는 **거기서 파생된 평면 뷰**다. 진행자·인사이트·알림이
+    전부 평면 뷰를 읽고 있어서 그대로 남겼다 — 소비처를 한꺼번에 뜯지 않기 위한 의도적 이중화다.
+    둘의 동기화는 `_sync_topics_questions` 가 책임진다(직접 대입하지 말 것).
+
+    **구형 가이드 호환:** `questions` 만 주고 `topics` 를 비우면 주제 1개("전체")로 감싼다.
+    운영 DB 에 이미 평면으로 저장된 가이드들이 이 경로로 그대로 동작한다.
+    """
     project_id: str = ""
     goal: str = ""          # 조사 전체 목표
+    topics: list[GuideTopic] = Field(default_factory=list)
     questions: list[GuideQuestion] = Field(default_factory=list)
     # STT 어휘 힌트. 이 조사에서 나올 법한 고유명사·전문용어를 담는다.
     # 조사 주제를 아는 건 우리뿐이고 STT 는 모른다 — 실측으로 '배달팁'이 '배달 TV'로
@@ -101,6 +128,26 @@ class InterviewGuide(BaseModel):
     vocabulary: list[str] = Field(default_factory=list)
     version: int = 1
     updated_at: datetime = Field(default_factory=_now)
+
+    @model_validator(mode="after")
+    def _sync_topics_questions(self) -> InterviewGuide:
+        """topics ↔ questions 를 한 방향으로 맞춘다 — topics 가 정본."""
+        if self.topics:
+            self.questions = [q for t in self.topics for q in t.questions]
+        elif self.questions:
+            # 구형(평면) 가이드 — 주제 1개로 감싼다. 운영 DB 마이그레이션 없이 읽기로만 처리.
+            self.topics = [GuideTopic(id="t1", title="전체", goal=self.goal,
+                                      order=0, questions=self.questions)]
+        return self
+
+    @property
+    def max_turns(self) -> int:
+        """이 가이드로 인터뷰가 쓸 수 있는 최대 턴 — 주제별 예산의 합.
+
+        전체 상한이라는 별도 상수는 두지 않는다(구 `MAX_ASKED = 12` 폐기). 총량은 주제 구성의
+        결과로 자연히 결정되고, 의뢰자는 가이드 화면에서 이 수를 실시간으로 본다.
+        """
+        return sum(len(t.questions) + 1 for t in self.topics)
 
 
 class ScreenerQuestion(BaseModel):

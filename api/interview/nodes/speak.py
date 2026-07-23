@@ -19,6 +19,14 @@ from ..state import InterviewState
 _CHUNK = re.compile(r"\S+\s*")   # 어절 단위 재생 — TTS 클라이언트가 즉시 읽기 시작할 수 있게
 
 
+def _topic_id_of(guide: dict, qid: str) -> str:
+    """이 문항이 속한 주제 id. 못 찾으면 빈 문자열(= 카운터가 1로 리셋된다)."""
+    for t in guide.get("topics") or []:
+        if any(q.get("id") == qid for q in (t.get("questions") or [])):
+            return t.get("id", "")
+    return ""
+
+
 def speak(state: InterviewState) -> dict:
     pid, sid = state["project_id"], state["session_id"]
     message = state.get("message", "")
@@ -48,9 +56,15 @@ def speak(state: InterviewState) -> dict:
         # ended_at 도 그때 찍힌다 (원격 R-4 시맨틱과 정렬).
         patch["status"] = "pending"
     store.update_session(pid, sid, patch)
-    # 문항별 턴 카운터 — 같은 문항이면 누적, 문항이 바뀌면 1로 리셋 (probe 여부 무관, 강제 advance 상한용)
+    # 문항별 턴 카운터 — 같은 문항이면 누적, 문항이 바뀌면 1로 리셋 (probe 여부 무관)
     q_streak = (state.get("q_streak", 0) + 1) if qid and qid == state.get("q_streak_qid") else 1
+    # 주제별 턴 카운터 — strategize 의 강제 advance 가 '주제 예산(질문수+1) - t_streak' 로 쓴다.
+    # 문항이 아니라 주제가 바뀔 때 리셋된다: 같은 주제 안에서 질문을 옮겨도 예산은 계속 깎인다.
+    tid = _topic_id_of(state.get("guide", {}) or {}, qid)
+    t_streak = (state.get("t_streak", 0) + 1) if tid and tid == state.get("t_streak_tid") else 1
     return {
+        "t_streak": t_streak,
+        "t_streak_tid": tid,
         "messages": [AIMessage(content=message)],
         "ledger": update_ledger(state.get("ledger", {}), qid, "touched", [], []),
         "covered": covered,

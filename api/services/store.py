@@ -16,6 +16,7 @@ from sqlalchemy import func, select, update
 from ..schemas.models import (
     ConsentLog,
     GuideQuestion,
+    GuideTopic,
     Insight,
     InterviewGuide,
     Material,
@@ -280,11 +281,14 @@ def save_guide(pid: str, g: InterviewGuide) -> InterviewGuide:
     g.updated_at = datetime.now(timezone.utc)
     with db_session() as s:
         r = s.get(GuideRow, pid)
+        # topics 가 정본, questions 는 평면 파생 — 둘 다 기록한다(롤백 시 구버전이 읽어야 한다).
+        topics = [t.model_dump() for t in g.topics]
         payload = [q.model_dump() for q in g.questions]
         if r:
-            r.goal, r.questions, r.version, r.updated_at = g.goal, payload, g.version, g.updated_at
+            r.goal, r.topics, r.questions = g.goal, topics, payload
+            r.version, r.updated_at = g.version, g.updated_at
         else:
-            s.add(GuideRow(project_id=pid, goal=g.goal, questions=payload,
+            s.add(GuideRow(project_id=pid, goal=g.goal, topics=topics, questions=payload,
                            version=g.version, updated_at=g.updated_at))
         s.commit()
     return g
@@ -295,6 +299,14 @@ def get_guide(pid: str) -> InterviewGuide | None:
         r = s.get(GuideRow, pid)
         if not r:
             return None
+        # topics 가 있으면 그게 정본. 없으면 구형 행이라 평면 questions 를 넘기고,
+        # InterviewGuide 가 주제 1개("전체")로 감싼다 — 운영 DB 를 다시 쓰지 않는다.
+        if r.topics:
+            return InterviewGuide(
+                project_id=r.project_id, goal=r.goal,
+                topics=[GuideTopic(**t) for t in r.topics],
+                version=r.version, updated_at=r.updated_at,
+            )
         return InterviewGuide(
             project_id=r.project_id, goal=r.goal,
             questions=[GuideQuestion(**q) for q in (r.questions or [])],

@@ -2,6 +2,7 @@
 
 // C-4 결과 대시보드 — 세션 목록 · 세션별 전사/요약/감정 · 집계 인사이트(recharts) + C-5 내보내기.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bar,
   BarChart,
@@ -77,6 +78,74 @@ function csvCell(v: unknown): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
+/** 표본이 이보다 작으면 비율·차트를 쓰지 않는다 — `2 · 100%` 는 2명을 전원처럼 읽히게 한다. */
+const SMALL_N = 10;
+
+const VIEWS = [
+  ["summary", "요약"],
+  ["topics", "주제별"],
+  ["responses", "응답"],
+] as const;
+type View = (typeof VIEWS)[number][0];
+
+/** 지지 인원 표기. 작은 표본에서는 분모를 반드시 같이 적는다(design.md §5 수치 표기 규칙). */
+function supportLabel(count: number, n: number): string {
+  if (!n) return `${count}명`;
+  if (n < SMALL_N) return `${n}명 중 ${count}명이`;
+  return `${count}명 (${Math.round((count / n) * 100)}%)이`;
+}
+
+/** 인용 중복 판정용 정규화 — 조사·구두점·공백 차이만 다른 같은 말을 하나로 본다. */
+function quoteKey(q: string): string {
+  return q.replace(/[\s"'“”‘’.,!?·]/g, "").slice(0, 40);
+}
+
+/** 값 0 인 버킷은 접는다 — 지우지는 않는다(안 나온 것도 정보다). */
+function BucketBars({
+  bars,
+  total,
+}: {
+  bars: { id: string; label: string; count: number; pct: number }[];
+  total: number;
+}) {
+  const [showEmpty, setShowEmpty] = useState(false);
+  const hit = bars.filter((b) => b.count > 0);
+  const empty = bars.filter((b) => b.count === 0);
+  const small = total < SMALL_N;
+  const shown = showEmpty ? [...hit, ...empty] : hit;
+  return (
+    <div className="mt-3">
+      <ul className="space-y-2">
+        {shown.map((bar) => (
+          <li key={bar.id}>
+            <div className="flex items-baseline justify-between gap-2 text-meta">
+              <span className="text-ink-soft">{bar.label}</span>
+              <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                {small ? `${total}명 중 ${bar.count}명` : `${bar.count} · ${bar.pct}%`}
+              </span>
+            </div>
+            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-platinum">
+              <div
+                className="h-full rounded-full bg-red transition-[width]"
+                style={{ width: `${bar.pct}%` }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+      {empty.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowEmpty((v) => !v)}
+          className="mt-2 font-mono text-2xs text-ink-faint underline-offset-2 hover:text-ink-soft hover:underline"
+        >
+          {showEmpty ? "미언급 접기" : `미언급 ${empty.length}개 보기`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ResultsPanel({ projectId }: { projectId: string }) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [guide, setGuide] = useState<InterviewGuide | null>(null);
@@ -85,6 +154,23 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   const [turns, setTurns] = useState<Turn[] | null>(null);
   const ins = usePipeline<Insight>();
   const [exporting, setExporting] = useState(false);
+
+  // 하위 탭도 URL 이 소유한다 — 결과 화면 링크를 보내면 상대도 같은 탭을 봐야 한다.
+  const router = useRouter();
+  const search = useSearchParams();
+  const viewParam = search?.get("view");
+  const view: View = (VIEWS.map(([k]) => k) as string[]).includes(viewParam ?? "")
+    ? (viewParam as View)
+    : "summary";
+  const setView = useCallback(
+    (next: View) => {
+      const qs = new URLSearchParams(Array.from(search?.entries() ?? []));
+      qs.set("tab", "results");
+      qs.set("view", next);
+      router.replace(`?${qs.toString()}`, { scroll: false });
+    },
+    [router, search],
+  );
 
   const load = useCallback(() => {
     getDashboard(projectId)
@@ -204,6 +290,54 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
     return [...withBuckets, ...summaryOnly];
   }, [bucketSections, summaryMap, guide]);
 
+  // 요약 탭의 '발견' — theme 을 발견 단위로 쓴다. mention_count 는 이미 DB 실측이라
+  // 그대로 분자로 쓸 수 있다(계약 1). 인용은 유사 중복을 걷어내고 대표 1개만 남긴다 —
+  // 응답 4건짜리 조사에서 같은 말이 4번 반복돼 화면을 채우던 문제.
+  const n = insight?.session_count ?? 0;
+  const showCharts = n >= SMALL_N;
+  const findings = useMemo(
+    () =>
+      (insight?.themes ?? []).map((th) => {
+        const uniq: string[] = [];
+        const seen = new Set<string>();
+        for (const q of th.quotes) {
+          const k = quoteKey(q);
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
+          uniq.push(q);
+        }
+        return {
+          theme: th.theme,
+          summary: th.summary,
+          count: th.mention_count,
+          quote: uniq[0] ?? "",
+          repeated: th.quotes.length > uniq.length,
+        };
+      }),
+    [insight],
+  );
+
+  // 주제별 탭 — 가이드의 주제 계층에 문항 요약·버킷을 얹는다.
+  const topicSections = useMemo(() => {
+    const byQ = new Map(questionSections.map((s) => [s.id, s]));
+    return (guide?.topics ?? []).map((t) => ({
+      id: t.id,
+      title: t.title,
+      goal: t.goal,
+      questions: t.questions.map(
+        (q) =>
+          byQ.get(q.id) ?? {
+            id: q.id,
+            text: q.text,
+            total: 0,
+            bars: [] as { id: string; label: string; count: number; pct: number }[],
+            headline: "",
+            summary: "",
+          },
+      ),
+    }));
+  }, [guide, questionSections]);
+
   // 인사이트는 세션 수만큼 LLM 을 돈다 — 서버가 흘려보내는 i/N 진행을 진행 화면으로 받는다.
   async function refreshInsight() {
     setError(null);
@@ -305,195 +439,179 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* 집계 인사이트 */}
-      <section className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lead font-medium">전체 인사이트</h2>
-          <div className="flex flex-wrap gap-2">
+      {/* 하위 탭 — URL 이 소유한다(?view=). 요약·주제·전사를 한 페이지에 세로로 쌓지 않는다. */}
+      <div className="flex gap-1 border-b border-line" role="tablist">
+        {VIEWS.map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={view === key}
+            onClick={() => setView(key)}
+            className={cn(
+              "-mb-px border-b-2 px-3.5 py-2 text-meta font-medium transition-colors",
+              view === key
+                ? "border-red text-red"
+                : "border-transparent text-ink-faint hover:text-ink-soft",
+            )}
+          >
+            {label}
+            {key === "responses" && sessions.length > 0 ? ` ${sessions.length}건` : ""}
+          </button>
+        ))}
+      </div>
+
+      {view === "summary" && (
+        <section className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lead font-medium">요약</h2>
             <Button size="sm" variant="secondary" onClick={refreshInsight}>
               {insight ? "다시 분석" : "인사이트 생성"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
-              {exporting ? "준비 중…" : "CSV 내보내기"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => exportAll("json")} disabled={exporting}>
-              JSON
-            </Button>
           </div>
-        </div>
 
-        {!insight ? (
-          <p className="mt-4 text-base text-ink-soft">
-            아직 인사이트가 없어요. 응답이 몇 건 모이면 &lsquo;인사이트 생성&rsquo;을 눌러 주세요.
-          </p>
-        ) : (
-          <>
-            <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-ink">
-              {insight.overall || "요약이 아직 비어 있어요."}
+          {!insight ? (
+            <p className="mt-4 text-base text-ink-soft">
+              아직 인사이트가 없어요. 응답이 몇 건 모이면 &lsquo;인사이트 생성&rsquo;을 눌러 주세요.
             </p>
-            <p className="mt-2 font-mono text-2xs text-ink-faint">
-              응답 {insight.session_count}건 기준 · {formatDateTime(insight.generated_at)} 생성
-            </p>
+          ) : (
+            <>
+              <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-ink">
+                {insight.overall || "요약이 아직 비어 있어요."}
+              </p>
+              <p className="mt-2 font-mono text-2xs text-ink-faint">
+                응답 {n}건 기준 · {formatDateTime(insight.generated_at)} 생성
+              </p>
 
-            {themeData.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-meta font-medium text-ink-soft">주제별 언급 수</h3>
-                <div className="mt-2 h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={themeData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
-                        interval={0}
-                        tickLine={false}
-                        axisLine={{ stroke: "#D4D4D4" }}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#FBEBE9" }}
-                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }}
-                        formatter={(v: number) => [`${v}회`, "언급"]}
-                        labelFormatter={(_l, p) => p?.[0]?.payload?.full ?? ""}
-                      />
-                      <Bar dataKey="count" fill={ACCENT} radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              {findings.length > 0 && (
+                <ul className="mt-6 space-y-4">
+                  {findings.map((f) => (
+                    <li key={f.theme} className="border-l-2 border-red/50 pl-4">
+                      <h3 className="text-base font-semibold text-ink">{f.theme}</h3>
+                      <p className="mt-1 text-meta leading-relaxed text-ink-soft">{f.summary}</p>
+                      {f.count > 0 && (
+                        <p className="mt-1.5 text-meta text-ink">
+                          <b className="font-semibold">{supportLabel(f.count, n)}</b>
+                          {f.repeated ? " 같은 취지로 답했습니다." : ""}
+                        </p>
+                      )}
+                      {f.quote && (
+                        <p className="mt-2 text-meta italic text-ink-soft">&ldquo;{f.quote}&rdquo;</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* 차트는 표본이 충분할 때만 — n<10 에서 막대는 패턴이 아니라 잡음이다(design.md §5). */}
+              {showCharts && themeData.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-meta font-medium text-ink-soft">주제별 언급 수</h3>
+                  <div className="mt-2 h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={themeData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#7F7F7F" }} interval={0}
+                          tickLine={false} axisLine={{ stroke: "#D4D4D4" }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#7F7F7F" }}
+                          tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{ fill: "#FBEBE9" }}
+                          contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }}
+                          formatter={(v: number) => [`${v}회`, "언급"]}
+                          labelFormatter={(_l, pl) => pl?.[0]?.payload?.full ?? ""} />
+                        <Bar dataKey="count" fill={ACCENT} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {sentimentData.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-meta font-medium text-ink-soft">감정 분포</h3>
-                <div className="mt-2 h-48 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sentimentData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
-                        tickLine={false}
-                        axisLine={{ stroke: "#D4D4D4" }}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#7F7F7F" }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#E1E1E1" }}
-                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }}
-                      />
-                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                        {sentimentData.map((d) => (
-                          <Cell key={d.name} fill={d.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+              {showCharts && sentimentData.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-meta font-medium text-ink-soft">감정 분포</h3>
+                  <div className="mt-2 h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sentimentData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E1E1E1" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#7F7F7F" }}
+                          tickLine={false} axisLine={{ stroke: "#D4D4D4" }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#7F7F7F" }}
+                          tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{ fill: "#E1E1E1" }}
+                          contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D4D4D4" }} />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {sentimentData.map((d) => (<Cell key={d.name} fill={d.fill} />))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+              {!showCharts && (
+                <p className="mt-6 font-mono text-2xs text-ink-faint">
+                  응답 {n}건 — 표본이 작아 비율·차트 대신 실제 인원수로 적습니다.
+                </p>
+              )}
+            </>
+          )}
+          {error && <p className="mt-3 text-meta text-nogo">{error}</p>}
+        </section>
+      )}
 
-            {questionSections.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-meta font-medium text-ink-soft">문항별 요약·분류</h3>
-                <div className="mt-3 space-y-4">
-                  {questionSections.map((sec) => (
-                    <div key={sec.id} className="rounded-lg bg-bg p-4 ring-1 ring-line">
+      {view === "topics" && (
+        <section className="space-y-4">
+          {topicSections.length === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-base text-ink-soft">가이드를 불러오지 못했어요.</p>
+            </Card>
+          ) : (
+            topicSections.map((t) => (
+              <Card key={t.id} className="p-5">
+                <h3 className="text-lead font-medium text-ink">{t.title || "제목 없는 주제"}</h3>
+                {t.goal ? <p className="mt-0.5 text-meta text-ink-faint">{t.goal}</p> : null}
+                <div className="mt-4 space-y-4">
+                  {t.questions.map((q) => (
+                    <div key={q.id} className="rounded-lg bg-bg p-4 ring-1 ring-line">
                       <div className="flex items-baseline justify-between gap-2">
-                        <p className="text-meta font-medium text-ink">{sec.text}</p>
-                        {sec.total > 0 && (
-                          <span className="shrink-0 font-mono text-2xs text-ink-faint">
-                            응답 {sec.total}건
-                          </span>
-                        )}
+                        <p className="text-meta font-medium text-ink">{q.text}</p>
+                        <span className="shrink-0 font-mono text-2xs text-ink-faint">
+                          {q.total > 0 ? `${n}명 중 ${q.total}명이 받음` : "아직 아무도 안 받음"}
+                        </span>
                       </div>
-                      {(sec.headline || sec.summary) && (
-                        <div className="mt-2">
-                          {sec.headline && (
-                            <p className="text-meta font-semibold text-ink">{sec.headline}</p>
-                          )}
-                          {sec.summary && (
-                            <p className="mt-1 text-meta leading-relaxed text-ink-soft">
-                              {sec.summary}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {sec.bars.length > 0 && (
-                        <ul className="mt-3 space-y-2">
-                          {sec.bars.map((bar) => (
-                            <li key={bar.id}>
-                              <div className="flex items-baseline justify-between gap-2 text-meta">
-                                <span className="text-ink-soft">{bar.label}</span>
-                                <span className="shrink-0 font-mono text-2xs text-ink-faint">
-                                  {bar.count} · {bar.pct}%
-                                </span>
-                              </div>
-                              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-platinum">
-                                <div
-                                  className="h-full rounded-full bg-red transition-[width]"
-                                  style={{ width: `${bar.pct}%` }}
-                                />
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      {q.headline ? (
+                        <p className="mt-2 text-meta font-semibold text-ink">{q.headline}</p>
+                      ) : null}
+                      {q.summary ? (
+                        <p className="mt-1 text-meta leading-relaxed text-ink-soft">{q.summary}</p>
+                      ) : null}
+                      {q.bars.length > 0 ? <BucketBars bars={q.bars} total={q.total} /> : null}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              </Card>
+            ))
+          )}
+        </section>
+      )}
 
-            {insight.themes.length > 0 && (
-              <ul className="mt-6 space-y-3">
-                {insight.themes.map((t) => (
-                  <li key={t.theme} className="rounded-lg bg-bg p-4 ring-1 ring-line">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h4 className="text-base font-medium text-ink">{t.theme}</h4>
-                      <span className="shrink-0 font-mono text-2xs text-ink-faint">
-                        {t.mention_count}회 언급
-                      </span>
-                    </div>
-                    <p className="mt-1 text-meta leading-relaxed text-ink-soft">{t.summary}</p>
-                    {t.quotes.length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {t.quotes.map((q, i) => (
-                          <li
-                            key={i}
-                            className="border-l-2 border-accent/40 pl-3 text-meta italic text-ink-soft"
-                          >
-                            &ldquo;{q}&rdquo;
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-        {error && <p className="mt-3 text-meta text-nogo">{error}</p>}
-      </section>
-
-      {/* 세션 목록 + 전사 */}
-      <section>
-        <h2 className="text-lead font-medium">응답 {sessions.length}건</h2>
-        {sessions.length === 0 ? (
-          <p className="mt-3 rounded-xl bg-surface p-8 text-center text-base text-ink-soft shadow-card">
-            아직 응답이 없어요. 배포한 링크를 응답자에게 보내 보세요.
-          </p>
-        ) : (
+      {view === "responses" && (
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lead font-medium">응답 {sessions.length}건</h2>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
+                {exporting ? "준비 중…" : "CSV 내보내기"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => exportAll("json")} disabled={exporting}>
+                JSON
+              </Button>
+            </div>
+          </div>
+          {error && <p className="mt-2 text-meta text-nogo">{error}</p>}
+          {sessions.length === 0 ? (
+            <p className="mt-3 rounded-xl bg-surface p-8 text-center text-base text-ink-soft shadow-card">
+              아직 응답이 없어요. 배포한 링크를 응답자에게 보내 보세요.
+            </p>
+          ) : (
           <div className="mt-3 grid gap-4 lg:grid-cols-[260px,1fr]">
             <ul className="space-y-2 self-start">
               {sessions.map((s, i) => (
@@ -568,7 +686,8 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
             </div>
           </div>
         )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

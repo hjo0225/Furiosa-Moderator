@@ -63,13 +63,30 @@ export type GuideQuestion = {
   stimulus?: Stimulus | null;
 };
 
+/** 주제 — 질문을 묶는 단위. **인터뷰 턴 예산이 이 단위로 잡힌다: 질문수 + 1.** */
+export type GuideTopic = {
+  id: string;
+  title: string;
+  goal: string;
+  order: number;
+  questions: GuideQuestion[];
+};
+
 export type InterviewGuide = {
   project_id: string;
   goal: string;
+  /** 정본. 편집·저장은 항상 이쪽을 고친다. */
+  topics: GuideTopic[];
+  /** 서버가 topics 에서 파생해 내려주는 평면 뷰(읽기 전용). 직접 고치지 말 것. */
   questions: GuideQuestion[];
   version: number;
   updated_at: string;
 };
+
+/** 이 가이드로 인터뷰가 쓸 수 있는 최대 턴 = 주제별(질문수+1)의 합. */
+export function guideMaxTurns(g: Pick<InterviewGuide, "topics">): number {
+  return (g.topics ?? []).reduce((n, t) => n + t.questions.length + 1, 0);
+}
 
 // pending = 진행자는 마무리했고 응답자의 제출을 기다리는 중. completed 만 '응답 1건'으로 센다.
 export type SessionStatus =
