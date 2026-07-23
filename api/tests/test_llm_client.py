@@ -3,12 +3,19 @@
 가짜 OpenAI 클라이언트를 주입해 (1) 파라미터 전달, (2) tool_calls 파싱,
 (3) 임베딩 순서 보존을 검증한다. 기존 text()/structured() 는 이 티켓에서
 건드리지 않았으므로 여기서 재검증하지 않는다.
+
+_call() 의 retries override(벽시계 상한용, best-effort 부수 작업 대상)는
+아래 "_call() retries override" 절에서 별도로 검증한다.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from api.services.llm_client import LLMClient
+import httpx
+import pytest
+from openai import APIConnectionError
+
+from api.services.llm_client import LLMClient, LLMError
 
 
 # --- 가짜 응답 조립 -----------------------------------------------------------
@@ -110,3 +117,58 @@ def test_embed_omits_dimensions_when_none():
     assert vecs == [[0.5]]
     assert "dimensions" not in fake.kwargs               # 미지정 시 서버 기본 차원
     assert usage.tokens_in == 0
+
+
+# --- _call() retries override --------------------------------------------------
+# best-effort 부수 작업(reflect_ledger 등)에 실제 벽시계 상한을 주기 위한 키워드 전용
+# override. 기본(retries 미지정)은 기존 self.max_retries 재시도 동작과 byte-identical
+# 이어야 한다 — 그 회귀 여부를 아래 두 테스트로 함께 고정한다.
+
+class _FailingCompletions:
+    """항상 재시도 가능한 예외(APIConnectionError)를 던지는 가짜 completions — 호출 횟수·
+    마지막 kwargs 를 관찰한다."""
+
+    def __init__(self):
+        self.calls = 0
+        self.kwargs: dict | None = None
+
+    def create(self, **kwargs):
+        self.calls += 1
+        self.kwargs = kwargs
+        raise APIConnectionError(request=httpx.Request("POST", "http://x/chat/completions"))
+
+
+def test_call_retries_1_gives_up_after_single_attempt(monkeypatch):
+    from api.services import llm_client
+
+    monkeypatch.setattr(llm_client.time, "sleep", lambda *_: None)   # 백오프 빨리감기
+    cli = LLMClient(api_key="k", model="m")
+    fake = _FailingCompletions()
+    cli._cli = SimpleNamespace(chat=SimpleNamespace(completions=fake))
+
+    with pytest.raises(LLMError):
+        cli._call(retries=1, model="m", messages=[{"role": "user", "content": "hi"}])
+
+    assert fake.calls == 1   # 재시도 사다리 없이 1회 시도로 즉시 포기
+
+
+def test_call_default_retries_unchanged(monkeypatch):
+    """retries 미지정 — 기존 self.max_retries 회 재시도 동작이 그대로다(회귀 가드)."""
+    from api.services import llm_client
+
+    monkeypatch.setattr(llm_client.time, "sleep", lambda *_: None)
+    cli = LLMClient(api_key="k", model="m")
+    fake = _FailingCompletions()
+    cli._cli = SimpleNamespace(chat=SimpleNamespace(completions=fake))
+
+    with pytest.raises(LLMError):
+        cli._call(model="m", messages=[{"role": "user", "content": "hi"}])
+
+    assert fake.calls == cli.max_retries
+
+
+def test_call_retries_not_forwarded_to_create():
+    """retries 는 _call 내부에서 소비되고 OpenAI API 로는 흘러가지 않는다."""
+    cli, fake = _client_with(_chat_resp(content="ok"))
+    cli._call(retries=1, model="m", messages=[{"role": "user", "content": "hi"}])
+    assert "retries" not in fake.kwargs
