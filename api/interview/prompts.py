@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from ..prompts.interview_moderator import interview_moderator_system  # 생성 콜 시스템 (재수출)
 
 __all__ = [
-    "ListenOut", "ReflectOut", "ANALYST_SYSTEM", "REFLECT_SYSTEM",
+    "ListenOut", "ReflectOut", "CoverageUpdate", "ANALYST_SYSTEM", "REFLECT_SYSTEM",
     "analysis_user", "reflect_user", "opening_user",
     "generate_user", "farewell_user", "interview_moderator_system",
 ]
@@ -162,24 +162,39 @@ def farewell_user(messages: list) -> str:
 
 # --- 슬로우패스 (reflect) — 취재 수첩 정리, 응답자가 말하는 시간에 돈다 (T4) ------
 
-class ReflectOut(BaseModel):
+class CoverageUpdate(BaseModel):
+    """한 답변이 건드린 한 문항의 취재 결과 — 지금 물은 문항일 수도, 곁다리로 답한 문항일 수도 (보강 B)."""
+    question_id: str
+    coverage: Literal["touched", "satisfied", "saturated"] = "touched"
     facts: list[str] = Field(default_factory=list)
     hooks: list[str] = Field(default_factory=list)
-    coverage: Literal["touched", "satisfied", "saturated"] = "touched"
+
+
+class ReflectOut(BaseModel):
+    updates: list[CoverageUpdate] = Field(default_factory=list)
 
 
 REFLECT_SYSTEM = (
-    "당신은 정성조사 인터뷰의 기록 담당입니다. 방금 오간 한 문답을 취재 수첩에 정리합니다.\n"
-    "- facts: 답변에서 실제로 알아낸 사실 (짧은 문장, 없으면 빈 배열)\n"
-    "- hooks: 걸려 있는데 아직 안 판 떡밥 (없으면 빈 배열)\n"
-    "- coverage: 이 문항의 상태 — 더 나올 수 있으면 touched, '알아낼 것'을 채웠으면 satisfied, "
-    "더 캐도 안 나올 것 같으면 saturated"
+    "당신은 정성조사 인터뷰의 기록 담당입니다. 방금 나온 응답자 답변을 취재 수첩에 정리합니다.\n"
+    "답변이 실제로 건드린 문항마다 updates 항목을 하나씩 만드세요:\n"
+    "- question_id: 해당 문항 id (아래 목록에 있는 것만)\n"
+    "- facts: 그 문항에 대해 알아낸 사실 (짧은 문장)\n"
+    "- hooks: 걸려 있는데 아직 안 판 떡밥\n"
+    "- coverage: 그 문항 상태 — 더 나올 수 있으면 touched, '알아낼 것'을 채웠으면 satisfied, "
+    "더 캐도 안 나올 것 같으면 saturated\n"
+    "지금 물은 문항이 주로 채워지지만, 답변이 다른 문항까지 답했다면 그 문항도 넣으세요. "
+    "안 건드린 문항은 넣지 마세요."
 )
 
 
-def reflect_user(question_text: str, goal: str, utterance: str) -> str:
+def reflect_user(guide: dict, current_qid: str, utterance: str) -> str:
+    lines = "\n".join(
+        f"- {q['id']}: {q['text']} (알아낼 것: {q.get('goal', '')})"
+        + ("  ← 지금 물은 문항" if q["id"] == current_qid else "")
+        for q in guide.get("questions", []) if q.get("id")
+    )
     return (
-        f"[문항]\n{question_text} (알아낼 것: {goal})\n\n"
+        f"[가이드 문항 전체]\n{lines}\n\n"
         f"[응답자의 답변]\n{utterance}\n\n"
-        "위 문답을 수첩에 정리하세요."
+        "이 답변이 건드린 문항을 각각 updates 에 정리하세요."
     )

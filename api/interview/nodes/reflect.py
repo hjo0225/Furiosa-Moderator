@@ -24,16 +24,19 @@ def reflect_ledger(state: InterviewState) -> dict:
     questions = {q["id"]: q for q in state.get("guide", {}).get("questions", []) if q.get("id")}
     if not qid or not utterance or qid not in questions:
         return {}
-    q = questions[qid]
     try:
         out, _ = get_llm().structured(
-            REFLECT_SYSTEM, reflect_user(q["text"], q.get("goal", ""), utterance),
+            REFLECT_SYSTEM, reflect_user(state["guide"], qid, utterance),
             ReflectOut, max_tokens=400,
         )
     except LLMError as e:
         log.warning("원장 갱신 실패 — 이번 턴은 건너뜀 (다음 턴에 회복): %s", e)
         return {}
-    return {"ledger": update_ledger(state.get("ledger", {}), qid, out.coverage, out.facts, out.hooks)}
+    # 한 답변이 여러 문항을 건드릴 수 있다 — 문항별로 각자 페이지에 반영 (보강 B)
+    led = state.get("ledger", {})
+    for u in out.updates:
+        led = update_ledger(led, u.question_id, u.coverage, u.facts, u.hooks)
+    return {"ledger": led}
 
 
 def reflect_emotion(state: InterviewState) -> dict:

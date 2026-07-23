@@ -11,7 +11,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from api.interview.graph import build_graph
-from api.interview.prompts import ListenOut, ReflectOut
+from api.interview.prompts import CoverageUpdate, ListenOut, ReflectOut
 from api.interview.state import init_ledger
 from api.schemas.models import GuideQuestion, InterviewGuide, Turn
 
@@ -242,7 +242,8 @@ def test_messages_accumulate_in_state(fakes):
 def test_listen_updates_ledger_and_probe_streak(fakes):
     fs, set_llm = fakes
     set_llm(outs=[ListenOut(action="probe", question_id="q1"),
-                  ReflectOut(coverage="touched", facts=["배민 사용"], hooks=["배민클럽"])],
+                  ReflectOut(updates=[CoverageUpdate(
+                      question_id="q1", coverage="touched", facts=["배민 사용"], hooks=["배민클럽"])])],
             texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -343,7 +344,8 @@ def test_farewell_skips_guard(fakes, monkeypatch):
 
 def test_reflect_runs_before_next_interrupt(fakes):
     fs, set_llm = fakes
-    set_llm(outs=[ListenOut(action="probe", question_id="q1"), ReflectOut(facts=["사실1"])],
+    set_llm(outs=[ListenOut(action="probe", question_id="q1"),
+                  ReflectOut(updates=[CoverageUpdate(question_id="q1", facts=["사실1"])])],
             texts=["오프닝?", "꼬리?"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -386,7 +388,8 @@ def test_close_turn_still_reflects_last_answer(fakes, monkeypatch):
     monkeypatch.setattr(ref_mod, "store", fs)
     monkeypatch.setattr(ref_mod, "tag_emotion", lambda t: ("만족", 0.8))
     set_llm(outs=[ListenOut(action="close"),
-                  ReflectOut(coverage="satisfied", facts=["총정리 사실"], hooks=[])],
+                  ReflectOut(updates=[CoverageUpdate(
+                      question_id="q1", coverage="satisfied", facts=["총정리 사실"])])],
             texts=["오프닝?", "마무리 인사"])
     g = build_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "s1"}}
@@ -503,3 +506,132 @@ def test_real_answer_does_not_short_circuit(monkeypatch):
     fs.turns = [Turn(role="moderator", text="질문?", question_id="q1")]
     monkeypatch.setattr(eng, "store", fs)
     assert eng._non_answer_reply("p1", "s1", "글쎄요, 잘 모르겠어요") is None
+
+
+# --- 보강 A: probe/clarify 연속 상한 (꼬리질문 폭주 차단) ------------------------
+
+def _thin_ledger():
+    """q1 touched(빈약)·q2 pending — honest_close 미발동이면서 전환할 pending 이 있는 상태."""
+    led = init_ledger(GUIDE.model_dump())
+    led["q1"]["status"] = "touched"
+    return led
+
+
+def test_probe_streak_cap_forces_advance_to_pending():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1",
+                        "probe_streak": 3, "ledger": _thin_ledger()})
+    assert patch["action"] == "advance"          # 3연속 파고들었으면 결정론으로 전환
+    assert patch["question_id"] == "q2"          # 다음 pending 문항으로
+    assert patch["is_probe"] is False            # 전환이므로 probe 플래그 해제
+
+
+def test_clarify_streak_also_capped():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "clarify", "question_id": "q1",
+                        "probe_streak": 3, "ledger": _thin_ledger()})
+    assert patch["action"] == "advance" and patch["question_id"] == "q2"
+
+
+def test_streak_under_cap_not_forced():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1",
+                        "probe_streak": 2, "ledger": _thin_ledger()})
+    assert "action" not in patch                 # 2연속까지는 그대로 둔다
+
+
+def test_cap_without_pending_target_leaves_action():
+    from api.interview.nodes.strategize import strategize
+    led = init_ledger(GUIDE.model_dump())
+    led["q1"]["status"] = "touched"
+    led["q2"]["status"] = "touched"              # pending 없음(전부 satisfied 도 아님)
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1",
+                        "probe_streak": 5, "ledger": led})
+    assert "action" not in patch                 # 전환 대상이 없으면 강제하지 않는다
+
+
+def test_clarify_counts_toward_probe_streak(fakes):
+    fs, set_llm = fakes
+    set_llm(outs=[ListenOut(action="clarify", question_id="q1"), ReflectOut()],
+            texts=["오프닝?", "무슨 뜻인지 좀 더 말씀해 주실래요?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="음 그냥 그래요"), config)
+    assert g.get_state(config).values["probe_streak"] == 1   # clarify 도 꼬리질문 — 리셋 아님
+
+
+# --- 보강 B: 한 답변이 건드린 여러 문항에 나눠 귀속 -----------------------------
+
+def test_reflect_attributes_across_questions(fakes):
+    fs, set_llm = fakes
+    set_llm(
+        outs=[ListenOut(action="probe", question_id="q1"),
+              ReflectOut(updates=[
+                  CoverageUpdate(question_id="q1", coverage="satisfied", facts=["시간이 없어서"]),
+                  CoverageUpdate(question_id="q2", coverage="touched", facts=["대용식 사본 적 있음"])])],
+        texts=["오프닝?", "꼬리?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="시간이 없어서요. 예전에 대용식 사봤는데 비쌌어요"), config)
+    led = g.get_state(config).values["ledger"]
+    assert led["q1"]["facts"] == ["시간이 없어서"] and led["q1"]["status"] == "satisfied"
+    assert led["q2"]["facts"] == ["대용식 사본 적 있음"]     # 안 물은 문항인데 곁다리 답이 귀속됨
+    assert led["q2"]["status"] == "touched"                  # pending → touched
+
+
+def test_reflect_ignores_unknown_question_id(fakes):
+    fs, set_llm = fakes
+    set_llm(
+        outs=[ListenOut(action="probe", question_id="q1"),
+              ReflectOut(updates=[
+                  CoverageUpdate(question_id="q1", facts=["진짜 사실"]),
+                  CoverageUpdate(question_id="q99", facts=["환각"])])],   # q99 는 가이드에 없음
+        texts=["오프닝?", "꼬리?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="답변"), config)
+    led = g.get_state(config).values["ledger"]
+    assert led["q1"]["facts"] == ["진짜 사실"]
+    assert "q99" not in led                                  # 없는 문항은 조용히 무시
+
+
+# --- 보강 D: 모순 적어놓고 probe 로 라벨된 턴 → challenge 로 승격 -----------------
+
+def test_contradiction_promotes_probe_to_challenge():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": "가격 안 본다더니 최저가만 찾음"}})
+    assert patch["action"] == "challenge"        # 모순 메모가 있으면 probe 가 아니라 challenge
+    assert patch["is_probe"] is False
+
+
+def test_contradiction_promotes_clarify_to_challenge():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "clarify", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": "어제는 배민, 오늘은 안 쓴다더니"}})
+    assert patch["action"] == "challenge"
+
+
+def test_no_contradiction_leaves_probe():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": ""}})
+    assert "action" not in patch                 # 모순 없으면 probe 그대로
+
+
+def test_contradiction_labeled_probe_still_challenges(fakes):
+    fs, set_llm = fakes
+    llm = set_llm(
+        outs=[ListenOut(action="probe", question_id="q1", contradiction="가격 안 본다더니 최저가만 찾음"),
+              ReflectOut()],
+        texts=["오프닝?", "챌린지 질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="무조건 최저가요"), config)
+    v = g.get_state(config).values
+    assert v["action"] == "challenge"                    # probe 로 왔지만 모순 있어 승격
+    assert "가격 안 본다더니" in llm.text_prompts[-1]      # 모순이 생성 프롬프트에 실린다
