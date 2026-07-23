@@ -50,10 +50,8 @@ scripts/
   ingest_knowledge.py   전역 지식 풀(knowledge_chunks) 적재 CLI — parquet → 임베딩, 멱등(--replace)
 web/                    Next.js 14 App Router
   app/projects/         의뢰자 대시보드 (C-1~C-5)
-  app/projects/benchmark/  NPU vs GPU 벤치마크 뷰 — M1/M2/M3·손익분기 S*, 측정 전엔 전부 null(—)
   app/i/[projectId]/    응답자 인터뷰 (R-1~R-4)
   components/shell/sidebar.tsx  좌측 앱 셸(무인증 — 계정/워크스페이스 UI 없음)
-  components/benchmark/ 벤치마크 뷰 구성요소 (지표 카드 · 손익분기 패널 · 전력 차트 · 정직성 배너)
   components/           interview-flow · moderator-avatar · response-viewer
   public/mindlens-logo.svg  서비스 로고
   hooks/useAudio.ts     마이크 캡처
