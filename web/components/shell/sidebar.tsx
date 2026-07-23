@@ -4,7 +4,7 @@
 // 무인증 MVP: 워크스페이스 전환·계정 메뉴·유저 아바타 없음. 대신 푸터에
 // "로그인 없이, 링크만 공유" 안내를 둬서 무인증을 특징으로 드러낸다.
 import type { LucideIcon } from "lucide-react";
-import { Cpu, Folder, Link as LinkIcon, Menu, Search, X } from "lucide-react";
+import { Folder, Link as LinkIcon, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/shared";
 import { listProjects, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-export type SidebarActive = "projects" | "benchmark";
+export type SidebarActive = "projects";
 
 interface NavItem {
   key: SidebarActive;
@@ -25,7 +25,6 @@ interface NavItem {
 // 실존 화면만 올린다(design.md §5) — 아직 없는 화면(설정 등)은 네비에 안 넣는다.
 const NAV_ITEMS: NavItem[] = [
   { key: "projects", href: "/projects", label: "프로젝트", icon: Folder },
-  { key: "benchmark", href: "/projects/benchmark", label: "성능 · 벤치마크", icon: Cpu },
 ];
 
 // 서브리스트 상태 점 — 카드(design.md §5)의 배지 톤과 동일 매핑을 점으로 축약.
@@ -38,8 +37,8 @@ const STATUS_DOT: Record<Project["status"], string> = {
 const SUBNAV_MAX = 8;
 
 /**
- * `프로젝트` 네비 아래 최근 프로젝트 목록(design.md §5). 사이드바가 두 항목뿐이라
- * 상세로 들어간 뒤 다른 프로젝트로 건너뛸 동선이 없던 문제를 여기서 메운다.
+ * `프로젝트` 네비 아래 최근 프로젝트 목록(design.md §5). 상세로 들어간 뒤 다른
+ * 프로젝트로 건너뛸 동선이 없던 문제를 여기서 메운다.
  * pathname 이 바뀔 때마다 다시 불러와 방금 만든 프로젝트도 반영한다(가벼운 GET).
  */
 function ProjectSubNav({
@@ -128,21 +127,17 @@ function ProjectSubNav({
 }
 
 /**
- * `active` 를 안 주면 현재 경로로 유추한다(`/projects/benchmark` 이하만 benchmark,
- * 그 외 `/projects/*` 는 projects). 레이아웃이 서버 컴포넌트로 남을 수 있도록
- * pathname 유추는 이 컴포넌트 안에서 끝낸다.
+ * `active` 는 현재 네비가 하나뿐이라 항상 projects 로 떨어진다 — 화면이 늘어날 때
+ * 다시 경로로 유추한다. 레이아웃이 서버 컴포넌트로 남을 수 있도록 pathname 을 읽는
+ * 일은 이 컴포넌트 안에서 끝낸다.
  */
 export function Sidebar({ active }: { active?: SidebarActive }) {
   const pathname = usePathname();
-  const resolvedActive: SidebarActive =
-    active ?? (pathname?.startsWith("/projects/benchmark") ? "benchmark" : "projects");
-  // 서브리스트 활성 강조용 — /projects/{id} 형태일 때만 id, /projects/new·/benchmark 는 제외.
+  const resolvedActive: SidebarActive = active ?? "projects";
+  // 서브리스트 활성 강조용 — /projects/{id} 형태일 때만 id, /projects/new 은 제외.
   const pathSegments = pathname?.split("/").filter(Boolean) ?? [];
   const activeProjectId =
-    pathSegments[0] === "projects" &&
-    pathSegments[1] &&
-    pathSegments[1] !== "new" &&
-    pathSegments[1] !== "benchmark"
+    pathSegments[0] === "projects" && pathSegments[1] && pathSegments[1] !== "new"
       ? pathSegments[1]
       : null;
   const [mobileOpen, setMobileOpen] = useState(false);

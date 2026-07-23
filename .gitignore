@@ -36,8 +36,8 @@ docs/harness/
 .superpowers/
 
 # 벤치 원자료 — 팟에서 나온 CSV·로그·report.html. 리포에 넣지 않는다(용량·잡음).
-# 대시보드가 쓰는 건 여기서 뽑아낸 api/benchmark/latest.json 이고 그건 커밋한다:
-#   python scripts/bench_to_json.py "<원자료폴더>" api/benchmark/latest.json
+# 사이트의 벤치마크 탭은 제거됐다 — 남은 소비처는 발표 자료(docs/발표준비/)뿐이고,
+# 원자료 → 요약 JSON 변환은 scripts/bench_to_json.py 로 로컬에서 돌린다.
 # ⚠️ 원자료가 로컬에만 있으면 결과는 "재현 불가"다(계측 스펙 §9). 발표·제출용으로
 #    재현성이 필요해지면 별도 저장소나 릴리스 첨부로 보존할 것.
 /docs/bench_results*/

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .routers import benchmark, projects, public, speech
+from .routers import projects, public, speech
 
 # force=True — 다른 라이브러리(alembic 등)가 먼저 루트 핸들러를 잡아도 앱 설정이 이긴다.
 logging.basicConfig(
@@ -76,7 +76,6 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-app.include_router(benchmark.router)
 app.include_router(projects.router)
 app.include_router(public.router)
 app.include_router(speech.router)

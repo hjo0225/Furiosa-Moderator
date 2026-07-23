@@ -1,7 +1,7 @@
 "use client";
 
 // 의뢰자 콘텐츠 헤더바 — `/projects/*` 전 라우트 공통(design.md §5 "콘텐츠 헤더바").
-// 사이드바 네비가 프로젝트·벤치마크 두 항목뿐이라 상세 화면에 들어가면 돌아갈 동선이 없었다
+// 사이드바 네비가 `프로젝트` 하나뿐이라 상세 화면에 들어가면 돌아갈 동선이 없었다
 // (원래 있던 BackLink 가 사이드바 셸 도입 때 빠졌다) — 이 바가 그 자리를 메운다.
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -15,17 +15,16 @@ type Crumb = { label: string; href?: string };
 
 /**
  * 경로별 표시:
- * - `/projects`           → "프로젝트" (뒤로 없음)
- * - `/projects/new`       → ← 프로젝트 / 새 프로젝트
- * - `/projects/benchmark` → "성능 · 벤치마크" (뒤로 없음)
- * - `/projects/[id]`      → ← 프로젝트 / {제목} — 제목은 getProject 로 fetch, 로딩=스켈레톤,
+ * - `/projects`      → "프로젝트" (뒤로 없음)
+ * - `/projects/new`  → ← 프로젝트 / 새 프로젝트
+ * - `/projects/[id]` → ← 프로젝트 / {제목} — 제목은 getProject 로 fetch, 로딩=스켈레톤,
  *   실패 시 원문 id 대신 "프로젝트"로 대체.
  */
 export function ContentHeader() {
   const pathname = usePathname() ?? "";
   const segments = pathname.split("/").filter(Boolean); // ["projects", ...]
-  const section = segments[1]; // undefined | "new" | "benchmark" | {id}
-  const isProjectDetail = section !== undefined && section !== "new" && section !== "benchmark";
+  const section = segments[1]; // undefined | "new" | {id}
+  const isProjectDetail = section !== undefined && section !== "new";
   const projectId = isProjectDetail ? section : null;
 
   const [title, setTitle] = useState<string | null>(null);
@@ -58,8 +57,6 @@ export function ContentHeader() {
   } else if (section === "new") {
     crumbs.push({ label: "프로젝트", href: "/projects" });
     crumbs.push({ label: "새 프로젝트" });
-  } else if (section === "benchmark") {
-    crumbs.push({ label: "성능 · 벤치마크" });
   } else {
     crumbs.push({ label: "프로젝트", href: "/projects" });
     if (title !== null) {

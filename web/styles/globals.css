@@ -209,7 +209,7 @@
     }
   }
 
-  /* 벤치마크 텔레메트리 전용 — 시스템 monospace. design.md §2: mono 는 이 역할에만 쓰고
+  /* 텔레메트리 수치 전용 — 시스템 monospace. design.md §2: mono 는 이 역할에만 쓰고
      그 외 라벨/메타(font-mono 유틸)는 계속 Pretendard 로 렌더한다(단일 서체 정책 유지).
      숫자 정렬은 tabular-nums 유틸(Tailwind 코어 fontVariantNumeric, 별도 설정 불필요)과 조합해서 쓴다. */
   .font-telemetry {
