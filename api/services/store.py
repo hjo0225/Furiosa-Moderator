@@ -460,11 +460,24 @@ def coverage_stats(pid: str) -> dict:
     }
 
 
+def _label_tokens(label: str) -> list[str]:
+    """테마 라벨 토큰화 — keywords 가 비었을 때만 쓰는 폴백 매칭 재료.
+
+    공백으로 쪼갠 뒤 2글자 미만·순수 숫자 토큰은 버린다. 라벨 전체('칼로리 0 기준
+    중요도')를 통째로 부분문자열 매칭하면 서술형 라벨이 전사에 그대로 등장할 리 없어
+    항상 0건이 되므로, 토큰 단위로 쪼개 그중 하나라도 걸리면 매칭시킨다.
+    """
+    return [tok for tok in label.split() if len(tok) >= 2 and not tok.isdigit()]
+
+
 def theme_mention_counts(pid: str, theme_keywords: dict[str, list[str]]) -> dict[str, int]:
     """주제별 언급 응답자 수 — 전사 원문에서 직접 센다(LLM 추정 대체).
 
     theme 명이 아니라 **keywords** 로 매칭한다. theme 은 '배달비 및 할인 제도에 대한
     불만족' 같은 서술형이라 전사에 그대로 등장할 리 없고, 실제로 카운트가 전부 0 이 됐다.
+    keywords 가 비어 오면 라벨을 토큰화해 그 토큰들 중 **하나라도**(OR) 걸리면 매칭한다
+    (라벨 전체를 통째로 매칭하던 예전 폴백은 절대 걸리지 않아 이 함수가 고치려는
+    바로 그 실패를 재현했다).
 
     단순 부분문자열 매칭이다(형태소 분석 아님) — '배달비'가 '배달비용'에도 걸린다.
     LLM 이 눈대중으로 세는 것보다 재현 가능하고 검증 가능하다는 게 요점이다.
@@ -487,8 +500,8 @@ def theme_mention_counts(pid: str, theme_keywords: dict[str, list[str]]) -> dict
     for _sid, blob in rows:
         text = blob or ""
         for t in themes:
-            # keywords 가 비면 theme 명으로 폴백한다(없는 것보단 낫다)
-            terms = [k for k in theme_keywords.get(t) or [t] if k]
+            kws = [k for k in theme_keywords.get(t) or [] if k]
+            terms = kws if kws else _label_tokens(t)
             if any(k in text for k in terms):
                 out[t] += 1
     return out

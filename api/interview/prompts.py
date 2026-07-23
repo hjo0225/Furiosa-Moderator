@@ -233,7 +233,8 @@ class CoverageUpdate(BaseModel):
 
 
 class ReflectOut(BaseModel):
-    updates: list[CoverageUpdate] = Field(default_factory=list)
+    # max_length=3 — 출력 볼륨 상한(F2: max_tokens 초과 → 전체 재생성 폭주 방지, model_fields 는 그대로)
+    updates: list[CoverageUpdate] = Field(default_factory=list, max_length=3)
 
 
 REFLECT_SYSTEM = (
@@ -245,7 +246,8 @@ REFLECT_SYSTEM = (
     "- coverage: 그 문항 상태 — 더 나올 수 있으면 touched, '알아낼 것'을 채웠으면 satisfied, "
     "더 캐도 안 나올 것 같으면 saturated\n"
     "지금 물은 문항이 주로 채워지지만, 답변이 다른 문항까지 답했다면 그 문항도 넣으세요. "
-    "안 건드린 문항은 넣지 마세요."
+    "안 건드린 문항은 넣지 마세요.\n"
+    "updates 는 최대 3개, 각 facts·hooks 는 각각 최대 3개까지만 담고 항목마다 짧게 쓰세요."
 )
 
 

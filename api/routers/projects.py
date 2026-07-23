@@ -36,6 +36,7 @@ from ..schemas.models import (
     ProjectCreateIn,
     ResponseBucket,
     ScreenerSetIn,
+    ThemeInsight,
     WebhookSetIn,
     WebSelectIn,
 )
@@ -458,6 +459,22 @@ def _answers_by_question(turns_by_session: list[list]) -> dict[str, list[str]]:
     return grouped
 
 
+class _GenTheme(ThemeInsight):
+    """생성 전용 — keywords 를 필수로 승격(F2.3.2 와 같은 패턴).
+
+    ThemeInsight.keywords 는 저장·응답용이라 default([]) 라 required 가 아니고,
+    Qwen3 는 required 아닌 필드를 통째로 생략하는 실사고가 난다(guide 의 goal·buckets 와 동일).
+    필수로 승격하면 빈 배열로라도 채워 보내야 검증을 통과해, mention_count 매칭용
+    검색어가 통째로 비는 사고를 막는다.
+    """
+
+    keywords: list[str]
+
+
+class _GenInsight(Insight):
+    themes: list[_GenTheme]
+
+
 @router.post("/{pid}/insight", response_model=Insight)
 def build_insight(pid: str) -> Insight:
     """M-4 요약·집계. 완료 세션의 요약을 모아 프로젝트 인사이트를 만든다."""
@@ -494,8 +511,10 @@ def build_insight(pid: str) -> Insight:
         raise HTTPException(502, "세션 요약 생성에 모두 실패했습니다.")
 
     try:
+        # _GenInsight — keywords 필수 승격판. required 필드는 자가교정 재시도를 더 자주
+        # 태우니 3000→3600(그래도 _STRUCTURED_TOKEN_CEIL=4096 아래)으로 여유를 둔다.
         insight, _ = llm.structured(
-            INSIGHT_SYSTEM, insight_user(p.topic, summaries), Insight, max_tokens=3000
+            INSIGHT_SYSTEM, insight_user(p.topic, summaries), _GenInsight, max_tokens=3600
         )
     except LLMError as e:
         raise HTTPException(502, f"집계 생성에 실패했습니다: {e}") from e

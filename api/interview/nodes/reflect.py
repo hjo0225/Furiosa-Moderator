@@ -37,7 +37,7 @@ def reflect_ledger(state: InterviewState) -> dict:
     try:
         out, _ = get_llm().structured(
             REFLECT_SYSTEM, reflect_user(state["guide"], qid, utterance),
-            ReflectOut, max_tokens=400,
+            ReflectOut, max_tokens=1500,
         )
     except LLMError as e:
         log.warning("원장 갱신 실패 — 이번 턴은 건너뜀 (다음 턴에 회복): %s", e)
