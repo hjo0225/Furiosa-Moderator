@@ -30,6 +30,19 @@ from api.services.llm_client import LLMError, Usage
 PID = "p_1"
 
 
+@pytest.fixture(scope="module")
+def client():
+    """모듈에 하나만 만든다.
+
+    TestClient 마다 anyio 포털과 이벤트 루프가 생기는데, Windows 에서는 그 루프가 GC 될 때
+    OSError(WinError 10014)가 나고 pytest 가 그 unraisable 예외를 그때 돌던 아무 테스트에나
+    붙인다 — 스위트가 무작위로 빨개진다. 개수를 줄이는 게 가장 확실한 완화다.
+    컨텍스트 매니저로 써서 끝날 때 결정론으로 닫는다.
+    """
+    with TestClient(main.app) as c:
+        yield c
+
+
 def _steps_of(events: list[dict]) -> tuple[set[str], set[str]]:
     """(선언된 키, 실제 방출된 키)."""
     declared = {s["key"] for s in events[0]["steps"]}
@@ -229,41 +242,36 @@ def test_stream_routes_are_registered():
         assert p in paths, f"{p} 라우트가 없다"
 
 
-def test_guide_nonstream_matches_generator_result(project, guide_deps, fake_guide_llm):
+def test_guide_nonstream_matches_generator_result(client, project, guide_deps, fake_guide_llm):
     """두 겹 노출의 핵심 보증 — drain 경로가 제너레이터의 result 와 같아야 한다."""
     expected = _guide_events(project)[-1]["result"]
-    with TestClient(main.app) as c:
-        plain = c.post(f"/api/projects/{PID}/guide", json={})
+    plain = client.post(f"/api/projects/{PID}/guide", json={})
     assert plain.status_code == 200
     assert plain.json()["goal"] == expected["goal"]
     assert len(plain.json()["questions"]) == len(expected["questions"])
 
 
-def test_guide_nonstream_still_raises_502_on_llm_failure(project, guide_deps, boom_guide_llm):
+def test_guide_nonstream_still_raises_502_on_llm_failure(client, project, guide_deps, boom_guide_llm):
     """기존 계약 회귀 — 비스트림은 지금과 똑같이 502 로 떨어져야 한다."""
-    with TestClient(main.app) as c:
-        assert c.post(f"/api/projects/{PID}/guide", json={}).status_code == 502
+    assert client.post(f"/api/projects/{PID}/guide", json={}).status_code == 502
 
 
-def test_guide_stream_404_before_stream_starts(monkeypatch, guide_deps, fake_guide_llm):
+def test_guide_stream_404_before_stream_starts(client, monkeypatch, guide_deps, fake_guide_llm):
     # 없는 프로젝트는 SSE 200 + 인밴드 에러가 아니라 진짜 404 여야 한다.
     monkeypatch.setattr(store_mod, "get_project", lambda pid: None)
-    with TestClient(main.app) as c:
-        assert c.post("/api/projects/nope/guide/stream", json={}).status_code == 404
+    assert client.post("/api/projects/nope/guide/stream", json={}).status_code == 404
 
 
-def test_insight_stream_400_before_stream_starts(project, monkeypatch):
+def test_insight_stream_400_before_stream_starts(client, project, monkeypatch):
     monkeypatch.setattr(store_mod, "list_sessions", lambda pid: [])
-    with TestClient(main.app) as c:
-        assert c.post(f"/api/projects/{PID}/insight/stream").status_code == 400
+    assert client.post(f"/api/projects/{PID}/insight/stream").status_code == 400
 
 
 def test_insight_nonstream_matches_generator_result(
-    project, two_completed_sessions, fake_insight_llm
+    client, project, two_completed_sessions, fake_insight_llm
 ):
     expected = _insight_events(project, two_completed_sessions)[-1]["result"]
-    with TestClient(main.app) as c:
-        plain = c.post(f"/api/projects/{PID}/insight")
+    plain = client.post(f"/api/projects/{PID}/insight")
     assert plain.status_code == 200
     assert plain.json()["overall"] == expected["overall"]
     assert plain.json()["session_count"] == expected["session_count"]
