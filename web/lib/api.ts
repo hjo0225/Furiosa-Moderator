@@ -296,3 +296,140 @@ export async function fetchVoices(): Promise<SpeechVoice[]> {
   const data = await request<{ voices?: SpeechVoice[] }>("/api/speech/voices");
   return data.voices ?? [];
 }
+
+// --- 벤치마크 (RNGD vs GPU 손익분기, Task 7) ---------------------------------
+// 계약 정본: docs/specs/2026-07-23-rngd-benchmark-instrumentation.md §1(지표 정의)·
+// §2(손익분기)·§7(출력물). 측정 하네스(부하 재생기·데이터 수집)는 별도 워크스트림 —
+// 이 타입·fetch 는 그 산출물을 "소비"만 한다(문서 인용: "UI(대시보드)는 §7 출력물을
+// 소비만 한다").
+//
+// **null-우선 계약**: 실측 전 필드는 전부 null. 미측정 항목을 추정치로 채우는 것은
+// 스펙 §8 "하지 말 것" 위반이므로 절대 금지 — 값이 없으면 여기서도, 화면에서도 null 그대로 둔다.
+
+/** 결과 표(§7)의 4개 고정 구성. GPU 대조군 1 + RNGD 3(governor·prefix caching 조합). */
+export type BenchmarkConfigKey =
+  | "gpu_baseline"
+  | "rngd_perf_cache_on"
+  | "rngd_powersave_cache_on"
+  | "rngd_perf_cache_off";
+
+/** 결과 표 1행 = 구성 1개. 모든 측정치는 number|null — null 은 "아직 측정 안 함". */
+export type BenchmarkRow = {
+  config: BenchmarkConfigKey;
+  label: string; // 표시용 라벨 (예: "GPU 대조군", "RNGD · Perf · cache on")
+  hardware: "gpu" | "rngd";
+  m1_sessions_per_card: number | null; // M1 — SLA 충족 동시 세션 수(세션슬롯/카드). §1: max C : turn_e2e p95 ≤ 2000ms
+  cards_for_500: number | null; // 500세션 처리에 필요한 카드 수 (ceil(500 / M1))
+  m2_wh_per_session: number | null; // M2 — 세션당 Wh(벽면 PDU 기준, idle 포함)
+  idle_share: number | null; // idle 전력이 차지하는 비중, 0~1
+  kappa: number | null; // M3 — 버킷 분류 Cohen's κ
+  delta_kappa: number | null; // Δκ = κ_rngd - κ_gpu (게이트: κ<0.75 또는 Δκ<-0.05 면 M1·M2 무효)
+  ttft_p95_ms: number | null; // 타이핑 인디케이터 체감 지표(M1과 함께 보고)
+  turn_e2e_p50_ms: number | null;
+};
+
+/** 24h 전력 시계열(§7 차트 2) 1점. */
+export type PowerTimeseriesPoint = {
+  t: string; // ISO8601
+  wall_power_w: number | null; // 벽면 PDU 실측(§8: 카드 센서만으로 계산 금지)
+  concurrent_sessions: number | null;
+};
+
+/** 손익분기 곡선(§2·§7 차트 1) 1점. 두 비용선이 s_breakeven 세션 수에서 교차한다. */
+export type BreakevenCurvePoint = {
+  sessions: number;
+  cost_rngd: number | null;
+  cost_baseline: number | null;
+};
+
+/** 실행 메타데이터(§4 "재현성") — 재현성 기록용. 모르는 값은 null(추정 금지), 숫자도 문자열로 받는다
+ *  ("측정 안 함"과 "0"을 구분할 필요가 없고, 부록은 순수 표시용이라 원문 그대로 보여주면 충분하다). */
+export type BenchmarkRunMeta = {
+  sdk_version: string | null;
+  firmware_version: string | null;
+  driver_version: string | null;
+  model_id: string | null;
+  quantization: string | null;
+  governor: string | null;
+  prefix_caching: string | null;
+  tensor_parallel_size: string | null;
+  corpus_hash: string | null;
+  prompt_template_hash: string | null;
+  cache_hit_rate: string | null;
+};
+
+export type BenchmarkResult = {
+  rows: BenchmarkRow[];
+  s_breakeven: number | null; // 헤드라인 S* — 월 손익분기 세션 수
+  breakeven_curve: BreakevenCurvePoint[]; // 비어 있으면 뷰가 스키매틱(개념도)으로 대신 그린다
+  power_timeseries: PowerTimeseriesPoint[]; // 비어 있으면 "계측 대기" 플레이스홀더
+  idle_baseline_w: number | null;
+  measured_at: string | null; // 마지막 측정 실행 시각. null = 아직 실행된 계측이 없음
+  meta: BenchmarkRunMeta;
+};
+
+function emptyBenchmarkRow(
+  config: BenchmarkConfigKey,
+  label: string,
+  hardware: "gpu" | "rngd",
+): BenchmarkRow {
+  return {
+    config,
+    label,
+    hardware,
+    m1_sessions_per_card: null,
+    cards_for_500: null,
+    m2_wh_per_session: null,
+    idle_share: null,
+    kappa: null,
+    delta_kappa: null,
+    ttft_p95_ms: null,
+    turn_e2e_p50_ms: null,
+  };
+}
+
+/** null-우선 기본값 — 계측 하네스가 아직 결과를 내놓지 않았을 때 화면이 그대로 렌더하는 값.
+ *  4행 순서·라벨은 스펙 §7 결과 표와 1:1. */
+export const EMPTY_BENCHMARK_RESULT: BenchmarkResult = {
+  rows: [
+    emptyBenchmarkRow("gpu_baseline", "GPU 대조군", "gpu"),
+    emptyBenchmarkRow("rngd_perf_cache_on", "RNGD · Perf · cache on", "rngd"),
+    emptyBenchmarkRow("rngd_powersave_cache_on", "RNGD · PowerSave · cache on", "rngd"),
+    emptyBenchmarkRow("rngd_perf_cache_off", "RNGD · Perf · cache off", "rngd"),
+  ],
+  s_breakeven: null,
+  breakeven_curve: [],
+  power_timeseries: [],
+  idle_baseline_w: null,
+  measured_at: null,
+  meta: {
+    sdk_version: null,
+    firmware_version: null,
+    driver_version: null,
+    model_id: null,
+    quantization: null,
+    governor: null,
+    prefix_caching: null,
+    tensor_parallel_size: null,
+    corpus_hash: null,
+    prompt_template_hash: null,
+    cache_hit_rate: null,
+  },
+};
+
+/** 벤치마크 결과 fetch. 계측 하네스(스펙 §3~§6, 별도 워크스트림)가 아직 붙지 않아
+ *  백엔드에 대응 엔드포인트가 없다 — 404/네트워크 실패는 조용히 null-우선 기본값으로
+ *  떨어진다(추정치를 만들어내지 않는다, 스펙 §8). 하네스가 붙으면 이 함수만 실제 파싱으로
+ *  바꾸면 되고, 뷰는 이미 null 을 그릴 줄 알아서 손댈 필요 없다. */
+export async function fetchBenchmarkResult(): Promise<BenchmarkResult> {
+  try {
+    const data = await request<Partial<BenchmarkResult>>("/api/benchmark/latest");
+    return {
+      ...EMPTY_BENCHMARK_RESULT,
+      ...data,
+      meta: { ...EMPTY_BENCHMARK_RESULT.meta, ...(data.meta ?? {}) },
+    };
+  } catch {
+    return EMPTY_BENCHMARK_RESULT;
+  }
+}
