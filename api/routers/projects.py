@@ -33,6 +33,7 @@ from ..schemas.models import (
     BlocklistSetIn,
     GuideGenerateIn,
     GuideQuestion,
+    GuideTopic,
     Insight,
     InterviewGuide,
     Material,
@@ -156,8 +157,23 @@ class _GenQuestion(GuideQuestion):
     response_buckets: list[_GenBucket]
 
 
-class _GenGuide(InterviewGuide):
+class _GenTopic(GuideTopic):
+    """생성 전용 — title·goal·questions 를 필수로 승격(_GenQuestion 과 같은 이유)."""
+
+    title: str
+    goal: str
     questions: list[_GenQuestion]
+
+
+class _GenGuide(InterviewGuide):
+    """생성 스키마는 **주제만** 받는다.
+
+    평면 `questions` 를 같이 required 로 두면 모델이 같은 문항을 두 번 쓰게 되고
+    (토큰 낭비 + 두 목록이 어긋나는 사고), 어차피 `InterviewGuide` 가 topics 에서
+    파생해 준다. 그래서 여기서는 topics 만 요구한다.
+    """
+
+    topics: list[_GenTopic]
 
 
 _GOAL_MARKER = "이 질문으로 알아내려는 것"
@@ -343,11 +359,17 @@ def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
     # 5. 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에 박혀 오는
     #    사고도 여기서 결정론으로 분리한다.
     yield pipe.start("normalize")
-    for i, q in enumerate(guide.questions):
-        _split_goal_from_text(q)
-        q.order = i
-        q.id = q.id or f"q{i + 1}"
-        _normalize_buckets(q)
+    qn = 0
+    for ti, t in enumerate(guide.topics):
+        t.order = ti
+        t.id = t.id or f"t{ti + 1}"
+        for q in t.questions:
+            _split_goal_from_text(q)
+            q.order = qn
+            qn += 1
+            q.id = q.id or f"q{qn}"
+            _normalize_buckets(q)
+    # 평면 questions 는 같은 객체를 가리키는 뷰라 위 수정이 그대로 반영된다(재검증 불필요).
     guide.goal = guide.goal or topic
     yield pipe.done("normalize", buckets=sum(len(q.response_buckets) for q in guide.questions))
 
@@ -509,9 +531,14 @@ def update_guide(pid: str, body: InterviewGuide) -> InterviewGuide:
     _require(pid)
     prev = store.get_guide(pid)
     body.version = (prev.version + 1) if prev else 1
-    for i, q in enumerate(body.questions):
-        q.order = i
-        q.id = q.id or f"q{i + 1}"
+    qn = 0
+    for ti, t in enumerate(body.topics):
+        t.order = ti
+        t.id = t.id or f"t{ti + 1}"
+        for q in t.questions:
+            q.order = qn
+            qn += 1
+            q.id = q.id or f"q{qn}"
     return store.save_guide(pid, body)
 
 

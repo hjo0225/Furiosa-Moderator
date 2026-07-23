@@ -2,7 +2,7 @@
 
 // 프로젝트 상세 — 가이드 검토·수정(C-2) + 배포(C-3) | 결과 대시보드(C-4) + 내보내기(C-5).
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -22,6 +22,8 @@ import { ResultsPanel } from "./results-panel";
 
 type Tab = "guide" | "results";
 
+const TABS: Tab[] = ["guide", "results"];
+
 const STATUS_LABEL: Record<Project["status"], string> = {
   draft: "작성 중",
   deployed: "배포됨",
@@ -38,7 +40,25 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState<Tab>("guide");
+  // 탭은 URL 이 소유한다 — 공유·뒤로가기·새로고침이 동작해야 한다(design.md §5 / ui-ux-pro-max Deep Linking).
+  // 예전엔 useState 라 결과 화면 링크를 보내도 상대는 가이드 탭을 봤다.
+  const search = useSearchParams();
+  const tabParam = search?.get("tab");
+  const urlTab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : null;
+  // URL 에 tab 이 없을 때만 '응답 있으면 결과부터' 기본값이 적용된다.
+  const [autoTab, setAutoTab] = useState<Tab>("guide");
+  const tab: Tab = urlTab ?? autoTab;
+
+  const setTab = useCallback(
+    (next: Tab) => {
+      setAutoTab(next);
+      const qs = new URLSearchParams(Array.from(search?.entries() ?? []));
+      qs.set("tab", next);
+      if (next !== "results") qs.delete("view");   // 결과 하위 탭은 결과 탭에서만 의미가 있다
+      router.replace(`?${qs.toString()}`, { scroll: false });
+    },
+    [router, search],
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -57,8 +77,8 @@ export function ProjectView({ projectId }: { projectId: string }) {
   // 이미 응답이 쌓여 있으면 결과 탭을 먼저 보여준다.
   // 제출 완료 기준이다 — 진행중인 세션으로 열면 아무것도 없는 결과 화면이 첫 화면이 된다.
   useEffect(() => {
-    if (project && project.completed_count > 0) setTab("results");
-  }, [project]);
+    if (!urlTab && project && project.completed_count > 0) setAutoTab("results");
+  }, [project, urlTab]);
 
   // 최초 로드부터 실패 — 보여줄 프로젝트가 아예 없으니 전면 에러 화면.
   if (error && !project) {

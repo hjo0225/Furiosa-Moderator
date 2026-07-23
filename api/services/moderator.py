@@ -26,8 +26,16 @@ from .pii import mask_pii, scan_pii
 log = logging.getLogger(__name__)
 
 # 진행자 질문이 이 수를 넘으면 강제 종료한다. 모델이 done 을 안 내는 경우의 안전장치로,
-# 응답자를 무한 인터뷰에 가두지 않기 위한 것이다(원본 프롬프트 기준 6~10턴).
-_MAX_ASKED = 12
+# 응답자를 무한 인터뷰에 가두지 않기 위한 것이다.
+#
+# 고정 상수(구 12)를 버리고 가이드에서 계산한다 — 주제당 질문수+1 의 합
+# (스펙 docs/specs/2026-07-24-guide-topics-turn-budget.md). 그래프 엔진의
+# strategize.max_turns 와 같은 정의이며, 구엔진은 폴백 경로라 값만 맞춘다.
+_FALLBACK_MAX_ASKED = 12   # 가이드가 없을 때만 쓰는 최후 안전장치
+
+
+def _max_asked(guide) -> int:
+    return getattr(guide, "max_turns", 0) or _FALLBACK_MAX_ASKED
 
 # 그 자체로는 아무 내용도 없는 발화들. 되묻기 판정에만 쓴다.
 # 의도적으로 **좁게** 잡았다 — 오탐(진짜 답변을 잡음으로 버림)이 미탐(잡음에 되물음)보다
@@ -46,7 +54,7 @@ def is_non_answer(text: str) -> bool:
     """실질적 내용이 없는 발화인가.
 
     "음, 그래. 그래." 처럼 추임새만 있는 발화가 정상 답변으로 처리되던 걸 막는다. 실측에서
-    이런 발화가 감정 태깅 LLM 호출을 낭비하고, 턴으로 저장되고, _MAX_ASKED 예산을 깎고,
+    이런 발화가 감정 태깅 LLM 호출을 낭비하고, 턴으로 저장되고, 턴 예산을 깎고,
     모델이 직전 질문을 사과 한마디 없이 거의 그대로 반복하게 만들었다.
 
     마이크가 TTS 재생음이나 주변음을 주워담으면 이런 게 들어온다.
@@ -257,7 +265,7 @@ def next_turn(
         log.info("프로빙 (session=%s, 종류=%s)", sid, out.probe_type)
 
     # 안전장치 — 모델이 종료를 안 내도 무한 인터뷰는 막는다.
-    if asked + 1 >= _MAX_ASKED:
+    if asked + 1 >= _max_asked(guide):
         done = True
         if not message:
             message = "오늘 말씀 정말 감사합니다. 여기서 인터뷰를 마치겠습니다."

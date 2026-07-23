@@ -71,6 +71,11 @@ class GuideRow(Base):
     goal: Mapped[str] = mapped_column(Text, default="")
     # 문항은 순서 있는 리스트라 JSONB 로 둔다. 문항 단위로 조회·집계할 일이 없고,
     # 별도 테이블로 빼면 순서 유지·버전 관리만 복잡해진다.
+    #
+    # topics 가 정본(주제 > 질문), questions 는 거기서 평면화한 파생 뷰다. 둘 다 쓰는 이유:
+    # ① 진행자·인사이트·알림이 평면 뷰를 읽고 있고 ② 롤백 시 구버전 코드가 questions 만
+    # 읽어도 동작해야 한다. topics 가 비어 있으면 구형 행이므로 읽는 쪽이 주제 1개로 감싼다.
+    topics: Mapped[list] = mapped_column(JSONB, default=list)
     questions: Mapped[list] = mapped_column(JSONB, default=list)
     version: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
