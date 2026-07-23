@@ -40,6 +40,7 @@ from ..schemas.models import (
 from ..services import store
 from ..services import research
 from ..services import evals
+from ..services.audience import collect_personas
 from ..services.llm_client import LLMError, get_llm
 
 log = logging.getLogger(__name__)
@@ -221,10 +222,12 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     target = body.target.strip() or p.target
     material = compose_guide_material(store.get_slot_summaries(pid))
     evidence = _collect_evidence(pid, p)
+    audience = collect_personas(p)   # 글로벌 페르소나 풀 → [대상 청중](코퍼스 비면 "")
     try:
         guide, _ = get_llm().structured(
             GUIDE_SYSTEM,
-            guide_user(topic, target, material, p.motivation, p.utilization, evidence=evidence),
+            guide_user(topic, target, material, p.motivation, p.utilization,
+                       evidence=evidence, audience=audience),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
             max_tokens=2000,
         )
