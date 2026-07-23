@@ -107,6 +107,16 @@ export function IdleDominancePanel({ result }: { result: BenchmarkResult }) {
         </p>
       )}
 
+      {result.energy.length === 0 ? (
+        <p className="mt-4 rounded-lg bg-paper px-4 py-4 text-meta leading-relaxed text-grey">
+          세션 단위 집계가 없어 세션당 에너지를 낼 수 없습니다 — 이번 런은 턴 벤치라 원자료에
+          세션 경계가 없습니다. 유휴 기준선{" "}
+          <span className="font-telemetry text-obsidian">
+            {fmtNum(result.idle_baseline_w, { digits: 0, unit: "W" })}
+          </span>
+          (카드 합)만 확인됐습니다. 세션 모드로 재측정하면 이 표가 채워집니다.
+        </p>
+      ) : (
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[560px] border-collapse text-left text-meta">
           <thead>
@@ -139,6 +149,7 @@ export function IdleDominancePanel({ result }: { result: BenchmarkResult }) {
           </tbody>
         </table>
       </div>
+      )}
     </Card>
   );
 }
