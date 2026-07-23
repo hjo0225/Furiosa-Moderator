@@ -194,6 +194,23 @@
     }
   }
 
+  /* 진행자 오브 맥동(ModeratorAvatar, speaking=true) — design.md §5 "작은 웜 오브 …말할 때 살짝 맥동".
+     scale 기반 — Tailwind 기본 animate-pulse(불투명도 펄스)는 오브가 깜빡이며 사라지는 느낌이라
+     "숨쉬는 오브"엔 안 맞는다. prefers-reduced-motion 은 별도 분기 없이 위 전역 규칙
+     (animation-duration→0.01ms, 이 파일 상단)이 끈다. */
+  .animate-moderator-pulse {
+    animation: moderator-pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes moderator-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.08);
+    }
+  }
+
   /* 벤치마크 텔레메트리 전용 — 시스템 monospace. design.md §2: mono 는 이 역할에만 쓰고
      그 외 라벨/메타(font-mono 유틸)는 계속 Pretendard 로 렌더한다(단일 서체 정책 유지).
      숫자 정렬은 tabular-nums 유틸(Tailwind 코어 fontVariantNumeric, 별도 설정 불필요)과 조합해서 쓴다. */

@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Mic } from "lucide-react";
 
 import { Button, Card } from "@/components/shared";
 import { TranscriptView } from "@/components/response-viewer";
@@ -525,7 +526,10 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
                     </Card>
                   )}
                   <Card className="p-5">
-                    <p className="mb-3 text-meta font-medium text-ink">🎙 인터뷰 대화 전사</p>
+                    <p className="mb-3 flex items-center gap-1.5 text-meta font-medium text-ink">
+                      <Mic className="h-4 w-4" aria-hidden="true" />
+                      인터뷰 대화 전사
+                    </p>
                     {turns === null ? (
                       <p className="animate-pulse font-mono text-meta text-ink-faint">
                         불러오는 중…

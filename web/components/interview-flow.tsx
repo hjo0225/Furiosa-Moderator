@@ -10,6 +10,7 @@
 // 한 줄만 보낸다. 함께 배선: voice-input.ts(전사 2회 실패 → 텍스트 폴백), useTts unlock/getLevel
 // (자동재생 권한 확보 + 아바타 진폭).
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Circle, Mic, Square, Volume2 } from "lucide-react";
 
 import { InterviewStimulus } from "@/components/interview-stimulus";
 import { Button, Card, fieldClass } from "@/components/shared";
@@ -215,8 +216,9 @@ export function InterviewFlow({
     <Card className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden p-0">
       {/* 상단 — 진행률 (프로빙 미반영) */}
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 sm:px-6">
-        <p className="font-mono text-2xs uppercase tracking-wider text-ink-faint">
-          🎙 {en ? "Moderator" : "진행자"}
+        <p className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-ink-faint">
+          <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+          {en ? "Moderator" : "진행자"}
         </p>
         {phase !== "review" && phase !== "done" && mainQ > 0 && (
           <div className="flex items-center gap-2">
@@ -305,7 +307,8 @@ function QuestionAndAnswer(p: {
           onClick={() => void tts.speak(question)}
           className="mt-3 inline-flex items-center gap-1.5 self-start text-meta font-medium text-accent"
         >
-          🔊 {en ? "Replay" : "다시 듣기"}
+          <Volume2 className="h-4 w-4" aria-hidden="true" />
+          {en ? "Replay" : "다시 듣기"}
         </button>
       )}
 
@@ -322,7 +325,10 @@ function QuestionAndAnswer(p: {
           </p>
         )}
         {phase === "recording" && (
-          <p className="mb-2 text-meta text-nogo">● {en ? "Recording" : "녹음 중"} {recorder.elapsedSec}s</p>
+          <p className="mb-2 flex items-center gap-1.5 text-meta text-nogo">
+            <Circle className="h-2.5 w-2.5" fill="currentColor" aria-hidden="true" />
+            {en ? "Recording" : "녹음 중"} {recorder.elapsedSec}s
+          </p>
         )}
         {phase === "transcribing" && (
           <p className="mb-2 text-meta text-ink-faint">{en ? "Transcribing…" : "음성 인식 중…"}</p>
@@ -340,7 +346,7 @@ function QuestionAndAnswer(p: {
           }}
           rows={3}
           disabled={!canType}
-          placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 🎤로 말하세요"}
+          placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 마이크로 말하세요"}
           className={fieldClass("min-h-[7rem] w-full resize-none text-lead")}
         />
         {/* 컨트롤 — 마이크·다음 모두 공유 Button(동일 h-14 pill)으로 통일 */}
@@ -355,7 +361,11 @@ function QuestionAndAnswer(p: {
               aria-label={en ? "Record answer" : "음성으로 답하기"}
               className={cn("w-14 shrink-0 !px-0", phase === "recording" && "!bg-nogo/10 !text-nogo !ring-nogo/40")}
             >
-              {phase === "recording" ? "■" : "🎤"}
+              {phase === "recording" ? (
+                <Square className="h-5 w-5" fill="currentColor" aria-hidden="true" />
+              ) : (
+                <Mic className="h-5 w-5" aria-hidden="true" />
+              )}
             </Button>
           )}
           <Button type="button" size="lg" onClick={goNext} disabled={!canNext} className="flex-1">

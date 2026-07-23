@@ -4,6 +4,7 @@
 // InAppBridge 를 최상단에 mount 한다: 카톡 등 인앱 웹뷰는 getUserMedia 가 막혀 음성 답변이
 // 아예 불가능하므로, 인터뷰를 시작시키기 전에 외부 브라우저로 유도해야 한다.
 import { useEffect, useState } from "react";
+import { CheckCircle2, HeartHandshake } from "lucide-react";
 
 import { InAppBridge } from "@/components/in-app-bridge";
 import { InterviewFlow } from "@/components/interview-flow";
@@ -113,8 +114,8 @@ export function RespondentView({ projectId }: { projectId: string }) {
           </p>
         ) : project.status === "closed" ? (
           <Card className="p-8 text-center">
-            <p className="text-2xl" aria-hidden>
-              🙏
+            <p aria-hidden="true">
+              <HeartHandshake className="inline-block h-7 w-7 text-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-3 text-lead font-medium">마감된 인터뷰예요</h1>
             <p className="mt-2 text-meta leading-relaxed text-ink-soft">
@@ -254,8 +255,8 @@ export function RespondentView({ projectId }: { projectId: string }) {
         ) : stage === "disqualified" ? (
           /* F4.3 부적격 — 정중한 종료. 세션을 만들지 않았으므로 집계 모수에 들어가지 않는다. */
           <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p className="text-3xl" aria-hidden>
-              🙏
+            <p aria-hidden="true">
+              <HeartHandshake className="inline-block h-8 w-8 text-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-4 text-title">감사합니다</h1>
             <p className="mt-3 text-base leading-relaxed text-ink-soft">
@@ -279,7 +280,9 @@ export function RespondentView({ projectId }: { projectId: string }) {
         ) : (
           /* R-4 완료 */
           <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p className="text-3xl" aria-hidden>✅</p>
+            <p aria-hidden="true">
+              <CheckCircle2 className="inline-block h-8 w-8 text-go" aria-hidden="true" />
+            </p>
             <h1 className="mt-4 text-title">제출됐어요</h1>
             <p className="mt-3 text-base leading-relaxed text-ink-soft">
               시간 내어 답변해 주셔서 감사합니다.{turnCount > 0 && ` 총 ${turnCount}개의 답변을 남겨주셨어요.`}
