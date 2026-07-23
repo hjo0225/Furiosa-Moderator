@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import Numeric, cast, delete, or_, select
 
-from ..services.db import BriefingChunkRow, db_session
+from ..services.db import BriefingChunkRow, KnowledgeChunkRow, db_session
 from ..services.embeddings import embed_texts
 from ..services.store import new_id
 
@@ -70,18 +70,103 @@ def index_project(pid: str) -> int:
     return len(rows)
 
 
-def search_chunks(pid: str, query: str, k: int = 3) -> list[dict]:
-    """코사인 top-k — v1은 임베딩만(리랭커는 §8 확인 후)."""
+def search_chunks(pid: str, query: str, k: int = 3, *,
+                  angle: str | None = None, candidates: int = 30) -> list[dict]:
+    """2단 검색 — 코사인으로 candidates 개 넓게 뽑고 리랭커로 top-k 재정렬.
+
+    angle 이 주어지면 그 슬롯으로 하드필터(WHERE). 리랭커 실패(LLMError)면 코사인
+    순서 그대로 top-k 반환(best-effort — 검색이 리랭커 장애로 죽지 않게).
+    """
     qv = embed_texts([query])[0]
     with db_session() as s:
         dist = BriefingChunkRow.embedding.cosine_distance(qv)
-        rows = s.execute(
-            select(BriefingChunkRow, dist.label("d"))
-            .where(BriefingChunkRow.project_id == pid)
-            .order_by(dist).limit(k)
-        ).all()
-    return [{"text": r.BriefingChunkRow.text, "source": r.BriefingChunkRow.source,
-             "score": 1.0 - float(r.d)} for r in rows]
+        stmt = (select(BriefingChunkRow, dist.label("d"))
+                .where(BriefingChunkRow.project_id == pid))
+        if angle:
+            stmt = stmt.where(BriefingChunkRow.angle == angle)
+        rows = s.execute(stmt.order_by(dist).limit(candidates)).all()
+    cands = [{"text": r.BriefingChunkRow.text, "source": r.BriefingChunkRow.source,
+              "score": 1.0 - float(r.d)} for r in rows]
+    if len(cands) <= k:
+        return cands[:k]                       # 재정렬할 게 없으면 리랭커 호출 자체를 아낀다
+    # 로컬 임포트 — 순환 임포트 위험 회피(레포 관례).
+    from ..services.llm_client import LLMError, get_llm
+
+    try:
+        ranked = get_llm().rerank(query, [c["text"] for c in cands], top_n=k)
+    except LLMError as e:  # 리랭커 장애가 검색을 죽이지 않게 — 코사인 순서로 폴백
+        log.warning("리랭크 실패, 코사인 순서로 폴백 (project=%s): %s", pid, e)
+        return cands[:k]
+    return [{**cands[i], "score": score} for i, score in ranked if 0 <= i < len(cands)][:k]
+
+
+def has_knowledge(corpus: str) -> bool:
+    """코퍼스에 행이 하나라도 있나 — 비어 있으면 상위 배선이 통째로 스킵(무동작)."""
+    with db_session() as s:
+        stmt = select(KnowledgeChunkRow.id).where(KnowledgeChunkRow.corpus == corpus).limit(1)
+        return s.execute(stmt).first() is not None
+
+
+def search_knowledge(query: str, corpus: str | None = None, k: int = 5, *,
+                     meta_filters: dict | None = None, keywords: list[str] | None = None,
+                     candidates: int = 30) -> list[dict]:
+    """글로벌 지식 풀 검색 — 코사인 candidates → 리랭커 top-k. search_chunks 의 전역판.
+
+    corpus 지정 시 그 코퍼스로 하드필터. meta_filters(dict) 는 JSONB 하드필터로 WHERE 에
+    실린다 — 스칼라 값은 동등(meta ->> key == str(val)), 2-원소 튜플/리스트 (lo, hi) 는
+    숫자 범위(cast(meta ->> key, Numeric) BETWEEN lo AND hi)로 변환한다.
+    예: meta_filters={"age": (20, 29), "sex": "M"} → age BETWEEN 20 AND 29 AND sex = 'M'.
+
+    keywords 가 주어지면 하이브리드 recall — 같은 필터에 text ILIKE '%kw%' OR 를 건 두
+    번째 쿼리로 키워드 매칭 문서를 뽑아 벡터 후보에 id 로 디둡 병합한다(벡터가 놓친 문서도
+    리랭커가 보게). 키워드 전용 행은 score=0.0 으로 들어가고 최종 순위는 리랭커가 정한다.
+    이건 확장자 BM25 가 아니라 가벼운 어휘(ILIKE 부분일치) recall 보정이다 — 한국어
+    stock-PG FTS 엔 형태소 토크나이저가 없어 부분일치 ILIKE 가 이식성 있는 선택.
+    리랭커 실패면 코사인 순서 폴백.
+
+    소비처: services/audience.collect_personas (RAG-7) — 가이드 생성 시 브리프로 검색.
+    """
+    def with_filters(stmt):
+        """corpus + meta_filters(동등/범위) 공통 WHERE — 벡터·키워드 쿼리가 함께 쓴다."""
+        if corpus:
+            stmt = stmt.where(KnowledgeChunkRow.corpus == corpus)
+        for key, val in (meta_filters or {}).items():
+            col = KnowledgeChunkRow.meta[key].astext
+            if isinstance(val, (tuple, list)) and len(val) == 2:   # (lo, hi) → 숫자 범위
+                stmt = stmt.where(cast(col, Numeric).between(val[0], val[1]))
+            else:                                                  # 스칼라 → 동등
+                stmt = stmt.where(col == str(val))
+        return stmt
+
+    qv = embed_texts([query])[0]
+    with db_session() as s:
+        dist = KnowledgeChunkRow.embedding.cosine_distance(qv)
+        stmt = with_filters(select(KnowledgeChunkRow, dist.label("d")))
+        rows = s.execute(stmt.order_by(dist).limit(candidates)).all()
+        cands = [{"text": r.KnowledgeChunkRow.text, "title": r.KnowledgeChunkRow.title,
+                  "meta": r.KnowledgeChunkRow.meta or {}, "score": 1.0 - float(r.d)} for r in rows]
+        if keywords:                           # 하이브리드 recall — 키워드 매칭 행을 합류(id 디둡)
+            seen = {r.KnowledgeChunkRow.id for r in rows}
+            kw_stmt = with_filters(select(KnowledgeChunkRow)).where(
+                or_(*[KnowledgeChunkRow.text.ilike(f"%{kw}%") for kw in keywords]))
+            for kr in s.execute(kw_stmt.limit(candidates)).all():
+                c = kr.KnowledgeChunkRow
+                if c.id in seen:               # 벡터에서 이미 뽑힌 행은 두 번 넣지 않는다
+                    continue
+                seen.add(c.id)
+                cands.append({"text": c.text, "title": c.title,
+                              "meta": c.meta or {}, "score": 0.0})   # 키워드 전용 → 순위는 리랭커가
+    if len(cands) <= k:
+        return cands[:k]                       # 재정렬할 게 없으면 리랭커 호출 자체를 아낀다
+    # 로컬 임포트 — 순환 임포트 위험 회피(레포 관례).
+    from ..services.llm_client import LLMError, get_llm
+
+    try:
+        ranked = get_llm().rerank(query, [c["text"] for c in cands], top_n=k)
+    except LLMError as e:  # 리랭커 장애가 검색을 죽이지 않게 — 코사인 순서로 폴백
+        log.warning("리랭크 실패, 코사인 순서로 폴백 (corpus=%s): %s", corpus, e)
+        return cands[:k]
+    return [{**cands[i], "score": score} for i, score in ranked if 0 <= i < len(cands)][:k]
 
 
 def refresh_project(pid: str) -> None:

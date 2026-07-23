@@ -79,6 +79,8 @@ class LLMClient:
         self.embed_model = s.embed_model
         self.embed_api_key = (s.embed_api_key or "").lstrip("﻿").strip()
         self._embed_cli = None
+        self.rerank_model = s.rerank_model
+        self.rerank_api_key = (s.rerank_api_key or "").lstrip("﻿").strip()
 
     def _client(self):
         if self._cli is None:
@@ -160,6 +162,46 @@ class LLMClient:
         data = sorted(resp.data, key=lambda d: d.index)
         u = resp.usage
         return [d.embedding for d in data], Usage(m, getattr(u, "prompt_tokens", 0) if u else 0, 0)
+
+    # --- 리랭크 --------------------------------------------------------------
+
+    def rerank(self, query: str, documents: list[str], *, top_n: int = 3,
+               model: str | None = None, max_doc_chars: int = 1200) -> list[tuple[int, float]]:
+        """/v1/rerank 호출 — [(원본 index, relevance_score)] 를 점수 내림차순으로 반환.
+
+        OpenAI SDK 에 rerank 가 없어 REST 를 httpx 로 직접 부른다(research._run_actor 관례).
+        documents 가 비면 호출 없이 []. HTTP 실패는 max_retries 재시도 후 LLMError.
+        긴 문서는 max_doc_chars 로 잘라 보낸다 — 라이브에서 장문 30개 리랭킹이 타임아웃을
+        내는 걸 확인했다(코사인 폴백은 되지만 리랭커 이점을 잃음). 인덱스는 원본 순서 그대로.
+        """
+        if not documents:
+            return []
+        import httpx
+
+        m = model or self.rerank_model
+        docs = [d[:max_doc_chars] for d in documents]
+        last: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/rerank",
+                    headers={"Authorization": f"Bearer {self.rerank_api_key}"},
+                    json={"model": m, "query": query, "documents": docs, "top_n": top_n},
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                break
+            except httpx.HTTPError as e:
+                last = e
+                time.sleep(0.5 * (attempt + 1))
+        else:
+            raise LLMError(f"리랭크 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
+        try:
+            results = resp.json()["results"]
+            parsed = [(item["index"], item["relevance_score"]) for item in results]
+        except (KeyError, ValueError, TypeError) as e:
+            raise LLMError(f"리랭크 응답 파싱 실패: {e}") from e
+        return sorted(parsed, key=lambda t: t[1], reverse=True)
 
     # --- 텍스트 --------------------------------------------------------------
 
@@ -263,16 +305,21 @@ class LLMClient:
         max_tokens: int = 1024,
         model: str | None = None,
         max_attempts: int = 3,
+        timeout: float | None = None,
     ) -> tuple[T, Usage]:
         """forced tool_choice 로 Pydantic 스키마에 맞는 객체를 받는다.
 
         검증 실패 시 오류 문구를 덧붙여 최대 max_attempts 회 재시도(자가교정).
         재시도로 태운 토큰도 누적해 반환한다.
         tool_calls 를 못 받으면 json_object 경로로 폴백한다.
+        timeout 은 호출별 override(가이드 등 무거운 단발) — None 이면 클라이언트 기본.
         """
         from pydantic import ValidationError
 
         m = model or self.model
+        # None 이면 timeout 키 자체를 넣지 않는다 — SDK 에서 timeout=None 은 '무제한'이라
+        # 클라이언트 기본(30s)과 다르다.
+        call_timeout = {"timeout": timeout} if timeout is not None else {}
         tool = {
             "type": "function",
             "function": {
@@ -298,6 +345,7 @@ class LLMClient:
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": "respond"}},
                 **self._extra(),
+                **call_timeout,
             )
             u = resp.usage
             total_in += u.prompt_tokens if u else 0
@@ -317,6 +365,7 @@ class LLMClient:
                 return self._structured_json(
                     system, user, schema, max_tokens=cur_max, model=m,
                     max_attempts=max_attempts, carry=(total_in, total_out),
+                    timeout=timeout,
                 )
             try:
                 payload = json.loads(calls[0].function.arguments or "{}")
@@ -339,10 +388,12 @@ class LLMClient:
         model: str,
         max_attempts: int = 3,
         carry: tuple[int, int] = (0, 0),
+        timeout: float | None = None,
     ) -> tuple[T, Usage]:
         """json_object 폴백 — 스키마를 프롬프트에 주입하고 검증 재시도."""
         from pydantic import ValidationError
 
+        call_timeout = {"timeout": timeout} if timeout is not None else {}   # None 이면 키 생략(SDK '무제한' 회피)
         schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
         sys = (
             f"{system}\n\n아래 JSON 스키마에 정확히 맞는 JSON 객체 하나로만 "
@@ -362,6 +413,7 @@ class LLMClient:
                 ],
                 response_format={"type": "json_object"},
                 **self._extra(),
+                **call_timeout,
             )
             u = resp.usage
             total_in += u.prompt_tokens if u else 0
