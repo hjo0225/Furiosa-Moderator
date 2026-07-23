@@ -4,10 +4,11 @@
 // InAppBridge 를 최상단에 mount 한다: 카톡 등 인앱 웹뷰는 getUserMedia 가 막혀 음성 답변이
 // 아예 불가능하므로, 인터뷰를 시작시키기 전에 외부 브라우저로 유도해야 한다.
 import { useEffect, useState } from "react";
+import { CheckCircle2, HeartHandshake } from "lucide-react";
 
 import { InAppBridge } from "@/components/in-app-bridge";
 import { InterviewFlow } from "@/components/interview-flow";
-import { Button, Card } from "@/components/shared";
+import { Button, Card, Skeleton } from "@/components/shared";
 import {
   getPublicProject,
   screenParticipant,
@@ -99,25 +100,28 @@ export function RespondentView({ projectId }: { projectId: string }) {
     <>
       <InAppBridge />
       <main
-        className={`mx-auto flex min-h-screen w-full flex-col px-4 py-8 sm:px-6 sm:py-14 ${
+        className={`mx-auto flex min-h-screen w-full flex-col bg-cream px-4 py-8 sm:px-6 sm:py-14 ${
           stage === "interview" ? "max-w-3xl" : "max-w-xl"
         }`}
       >
         {loadError ? (
-          <Card className="p-8 text-center">
-            <p className="text-base text-ink-soft">{loadError}</p>
+          <Card className="rounded-xl p-8 text-center ring-warm-border">
+            <p className="text-base text-warm-ink-soft">{loadError}</p>
           </Card>
         ) : !project ? (
-          <p className="animate-pulse text-center font-mono text-meta text-ink-faint">
-            불러오는 중…
-          </p>
+          <div className="space-y-3">
+            <Skeleton className="h-8 w-2/3 bg-warm-border" />
+            <Skeleton className="h-4 w-full bg-warm-border" />
+            <Skeleton className="h-4 w-5/6 bg-warm-border" />
+            <Skeleton className="mt-4 h-40 w-full rounded-xl bg-warm-border" />
+          </div>
         ) : project.status === "closed" ? (
-          <Card className="p-8 text-center">
-            <p className="text-2xl" aria-hidden>
-              🙏
+          <Card className="rounded-xl p-8 text-center ring-warm-border">
+            <p>
+              <HeartHandshake className="inline-block h-7 w-7 text-warm-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-3 text-lead font-medium">마감된 인터뷰예요</h1>
-            <p className="mt-2 text-meta leading-relaxed text-ink-soft">
+            <p className="mt-2 text-meta leading-relaxed text-warm-ink-soft">
               이 인터뷰는 모집이 끝났어요. 관심 가져주셔서 감사합니다.
             </p>
           </Card>
@@ -125,24 +129,24 @@ export function RespondentView({ projectId }: { projectId: string }) {
           <section>
             <p className="eyebrow">음성 인터뷰</p>
             <h1 className="mt-4 text-title">{project.title || project.topic}</h1>
-            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            <p className="mt-3 text-base leading-relaxed text-warm-ink-soft">
               AI 진행자가 음성으로 질문을 드려요. 말하거나 직접 입력해서 답해 주시면 됩니다.
               5~10분 정도 걸려요.
             </p>
 
             {/* R-1 — 수집 목적·항목·보관기간을 명시하고, 동의 없이는 진행할 수 없다 */}
-            <Card className="mt-6 p-5">
+            <Card className="mt-6 rounded-xl p-5 ring-warm-border">
               <h2 className="text-base font-medium text-ink">개인정보 수집·이용 동의</h2>
               <dl className="mt-4 space-y-3 text-meta leading-relaxed">
                 <div>
                   <dt className="font-medium text-ink">수집 목적</dt>
-                  <dd className="mt-0.5 text-ink-soft">
+                  <dd className="mt-0.5 text-warm-ink-soft">
                     &lsquo;{project.topic}&rsquo; 주제의 사용자 조사 및 결과 분석
                   </dd>
                 </div>
                 <div>
                   <dt className="font-medium text-ink">수집 항목</dt>
-                  <dd className="mt-0.5 text-ink-soft">
+                  <dd className="mt-0.5 text-warm-ink-soft">
                     인터뷰 대화 내용(음성에서 변환한 텍스트), 접속 브라우저 정보.
                     이름·연락처 등은 수집하지 않으며, 답변 중 개인정보로 보이는 표현은 저장 전에
                     자동으로 가려집니다.
@@ -150,23 +154,23 @@ export function RespondentView({ projectId }: { projectId: string }) {
                 </div>
                 <div>
                   <dt className="font-medium text-ink">보관 기간</dt>
-                  <dd className="mt-0.5 text-ink-soft">{RETENTION} 보관 후 파기</dd>
+                  <dd className="mt-0.5 text-warm-ink-soft">{RETENTION} 보관 후 파기</dd>
                 </div>
                 <div>
                   <dt className="font-medium text-ink">동의 거부 권리</dt>
-                  <dd className="mt-0.5 text-ink-soft">
+                  <dd className="mt-0.5 text-warm-ink-soft">
                     동의하지 않으실 수 있으며, 이 경우 인터뷰에 참여할 수 없습니다. 인터뷰 도중
                     언제든 창을 닫아 중단하실 수 있어요.
                   </dd>
                 </div>
               </dl>
 
-              <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg bg-bg p-3 ring-1 ring-line">
+              <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg bg-blush p-3 ring-1 ring-warm-border">
                 <input
                   type="checkbox"
                   checked={agreed}
                   onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-[color:var(--accent-solid)]"
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-red"
                 />
                 <span className="text-meta leading-relaxed text-ink">
                   위 내용을 읽고 개인정보 수집·이용에 <b>동의합니다.</b>
@@ -186,7 +190,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
               {starting ? "준비 중…" : "동의하고 인터뷰 시작"}
             </Button>
             {!agreed && (
-              <p className="mt-2 text-2xs text-ink-faint">
+              <p className="mt-2 text-2xs text-warm-ink-soft">
                 동의해 주셔야 인터뷰를 시작할 수 있어요.
               </p>
             )}
@@ -196,13 +200,13 @@ export function RespondentView({ projectId }: { projectId: string }) {
           <section>
             <p className="eyebrow">참가 조건 확인</p>
             <h1 className="mt-4 text-title">몇 가지만 확인할게요</h1>
-            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            <p className="mt-3 text-base leading-relaxed text-warm-ink-soft">
               이 인터뷰에 맞는 분인지 확인하기 위한 짧은 질문이에요. 각 문항에 하나씩 골라 주세요.
             </p>
 
             <div className="mt-6 space-y-4">
               {screenerQs.map((q, qi) => (
-                <Card key={q.id} className="p-5">
+                <Card key={q.id} className="rounded-xl p-5 ring-warm-border">
                   <fieldset>
                     <legend className="text-base font-medium text-ink">
                       {qi + 1}. {q.text}
@@ -211,8 +215,10 @@ export function RespondentView({ projectId }: { projectId: string }) {
                       {q.options.map((opt) => (
                         <label
                           key={opt}
-                          className={`flex cursor-pointer items-center gap-3 rounded-lg bg-bg p-3 ring-1 ${
-                            answers[q.id] === opt ? "ring-accent" : "ring-line"
+                          className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 ring-1 ${
+                            answers[q.id] === opt
+                              ? "bg-blush ring-red"
+                              : "bg-white ring-warm-border"
                           }`}
                         >
                           <input
@@ -221,7 +227,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
                             value={opt}
                             checked={answers[q.id] === opt}
                             onChange={() => pick(q.id, opt)}
-                            className="h-5 w-5 shrink-0 accent-[color:var(--accent-solid)]"
+                            className="h-5 w-5 shrink-0 accent-red"
                           />
                           <span className="text-meta leading-relaxed text-ink">{opt}</span>
                         </label>
@@ -246,22 +252,22 @@ export function RespondentView({ projectId }: { projectId: string }) {
               </Button>
             </div>
             {!allAnswered && (
-              <p className="mt-2 text-center text-2xs text-ink-faint">
+              <p className="mt-2 text-center text-2xs text-warm-ink-soft">
                 모든 질문에 답해 주시면 다음으로 넘어갈 수 있어요.
               </p>
             )}
           </section>
         ) : stage === "disqualified" ? (
           /* F4.3 부적격 — 정중한 종료. 세션을 만들지 않았으므로 집계 모수에 들어가지 않는다. */
-          <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p className="text-3xl" aria-hidden>
-              🙏
+          <section className="mx-auto max-w-md rounded-xl bg-white p-8 text-center shadow-card ring-1 ring-warm-border sm:p-10">
+            <p>
+              <HeartHandshake className="inline-block h-8 w-8 text-warm-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-4 text-title">감사합니다</h1>
-            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            <p className="mt-3 text-base leading-relaxed text-warm-ink-soft">
               참여해 주셔서 감사하지만, 이번 조사 대상에는 해당하지 않으세요.
             </p>
-            <p className="mt-4 text-meta leading-relaxed text-ink-faint">
+            <p className="mt-4 text-meta leading-relaxed text-warm-ink-soft">
               관심 가져주셔서 진심으로 감사드려요. 이제 창을 닫으셔도 좋아요.
             </p>
           </section>
@@ -272,19 +278,21 @@ export function RespondentView({ projectId }: { projectId: string }) {
               sessionId={session.id}
               onComplete={handleComplete}
             />
-            <p className="mt-4 text-center text-2xs leading-relaxed text-ink-faint">
+            <p className="mt-4 text-center text-2xs leading-relaxed text-warm-ink-soft">
               답변은 익명으로 저장되며 개인정보는 자동으로 가려집니다.
             </p>
           </section>
         ) : (
           /* R-4 완료 */
-          <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p className="text-3xl" aria-hidden>✅</p>
+          <section className="mx-auto max-w-md rounded-xl bg-white p-8 text-center shadow-card ring-1 ring-warm-border sm:p-10">
+            <p>
+              <CheckCircle2 className="inline-block h-8 w-8 text-go" aria-hidden="true" />
+            </p>
             <h1 className="mt-4 text-title">제출됐어요</h1>
-            <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            <p className="mt-3 text-base leading-relaxed text-warm-ink-soft">
               시간 내어 답변해 주셔서 감사합니다.{turnCount > 0 && ` 총 ${turnCount}개의 답변을 남겨주셨어요.`}
             </p>
-            <p className="mt-4 text-meta leading-relaxed text-ink-faint">
+            <p className="mt-4 text-meta leading-relaxed text-warm-ink-soft">
               답변은 익명으로 저장되었고, {RETENTION} 보관 후 파기됩니다. 이제 창을 닫으셔도 좋아요.
             </p>
           </section>

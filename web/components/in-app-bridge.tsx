@@ -5,6 +5,7 @@
 // 감지되면 "링크 복사 → 크롬/사파리에서 열기"를 안내한다(링크 복사가 OS 메뉴 위치 편차를 우회하는 확실한 경로).
 
 import { useEffect, useState } from "react";
+import { Check, Globe } from "lucide-react";
 
 import { Button, Card } from "@/components/shared";
 import { isInAppBrowser } from "@/lib/in-app-browser";
@@ -39,8 +40,8 @@ export function InAppBridge() {
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-5"
     >
       <Card className="w-full max-w-sm p-6 text-center">
-        <div className="text-4xl" aria-hidden>
-          🌐
+        <div className="flex justify-center text-ink">
+          <Globe className="h-9 w-9" aria-hidden="true" />
         </div>
         <h2 className="mt-3 text-lg font-bold text-ink">브라우저를 변경해 주세요</h2>
         <p className="mt-0.5 text-sm font-medium text-ink-soft">Please open in another browser</p>
@@ -55,7 +56,8 @@ export function InAppBridge() {
           Copy the link and open it in <b className="text-ink">Chrome / Safari</b>.
         </p>
         <Button type="button" onClick={copyLink} className="mt-5 w-full">
-          {copied ? "✓ 복사됨 / Copied" : "링크 복사하기 / Copy link"}
+          {copied && <Check className="h-4 w-4" aria-hidden="true" />}
+          {copied ? "복사됨 / Copied" : "링크 복사하기 / Copy link"}
         </Button>
       </Card>
     </div>

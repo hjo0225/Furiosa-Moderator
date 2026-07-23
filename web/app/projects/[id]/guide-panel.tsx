@@ -2,8 +2,9 @@
 
 // C-2 인터뷰 가이드 검토·수정 + C-3 배포(응답자 링크 발급).
 import { useCallback, useEffect, useState } from "react";
+import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 
-import { Button, buttonVariants, Card } from "@/components/shared";
+import { Button, buttonVariants, Card, Skeleton } from "@/components/shared";
 import {
   ApiError,
   deployProject,
@@ -374,7 +375,12 @@ export function GuidePanel({
   }
 
   if (loading) {
-    return <p className="animate-pulse font-mono text-meta text-ink-faint">불러오는 중…</p>;
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
   if (!guide) {
@@ -414,7 +420,7 @@ export function GuidePanel({
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lead font-medium">질문 {questions.length}개</h3>
-          <Button size="sm" variant="outline" onClick={generate} disabled={busy === "generate"}>
+          <Button size="sm" variant="secondary" onClick={generate} disabled={busy === "generate"}>
             {busy === "generate" ? "생성 중…" : "AI로 다시 생성"}
           </Button>
         </div>
@@ -471,9 +477,9 @@ export function GuidePanel({
                             type="button"
                             onClick={() => removeBucket(i, bi)}
                             aria-label="버킷 삭제"
-                            className="mt-1 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                            className="mt-1 rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
                           >
-                            ✕
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         </li>
                       ))}
@@ -534,26 +540,26 @@ export function GuidePanel({
                     onClick={() => moveQuestion(i, -1)}
                     disabled={i === 0}
                     aria-label="위로"
-                    className="rounded px-2 py-1 text-meta text-ink-faint hover:bg-accent-wash disabled:opacity-30"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
                   >
-                    ↑
+                    <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     onClick={() => moveQuestion(i, 1)}
                     disabled={i === questions.length - 1}
                     aria-label="아래로"
-                    className="rounded px-2 py-1 text-meta text-ink-faint hover:bg-accent-wash disabled:opacity-30"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-blush disabled:opacity-30"
                   >
-                    ↓
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     onClick={() => removeQuestion(i)}
                     aria-label="삭제"
-                    className="rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                    className="rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -627,9 +633,9 @@ export function GuidePanel({
                               type="button"
                               onClick={() => removeOption(qi, oi)}
                               aria-label="선택지 삭제"
-                              className="rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                              className="rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
                             >
-                              ✕
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           </li>
                         ))}
@@ -643,9 +649,9 @@ export function GuidePanel({
                     type="button"
                     onClick={() => removeScreenerQuestion(qi)}
                     aria-label="조건 삭제"
-                    className="mt-0.5 shrink-0 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                    className="mt-0.5 shrink-0 rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </li>
@@ -687,7 +693,7 @@ export function GuidePanel({
           <ul className="mt-4 space-y-2">
             {blocklist.map((word, i) => (
               <li key={i} className="flex items-center gap-2">
-                <span className="font-mono text-2xs text-ink-faint">✕</span>
+                <X className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden="true" />
                 <input
                   value={word}
                   onChange={(e) => updateBlockword(i, e.target.value)}
@@ -698,9 +704,9 @@ export function GuidePanel({
                   type="button"
                   onClick={() => removeBlockword(i)}
                   aria-label="금칙어 삭제"
-                  className="shrink-0 rounded px-2 py-1 text-meta text-ink-faint hover:bg-nogo/10 hover:text-nogo"
+                  className="shrink-0 rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
                 >
-                  ✕
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </li>
             ))}
@@ -727,7 +733,7 @@ export function GuidePanel({
         <Button onClick={save} disabled={busy === "save" || !dirty}>
           {busy === "save" ? "저장 중…" : dirty ? "가이드 저장" : "저장됨"}
         </Button>
-        <Button variant="outline" onClick={deploy} disabled={busy === "deploy"}>
+        <Button variant="secondary" onClick={deploy} disabled={busy === "deploy"}>
           {busy === "deploy"
             ? "배포 중…"
             : project.status === "deployed"
@@ -748,13 +754,14 @@ export function GuidePanel({
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" onClick={copyLink}>
-              {copied ? "✓ 복사됨" : "링크 복사"}
+              {copied && <Check className="h-4 w-4" aria-hidden="true" />}
+              {copied ? "복사됨" : "링크 복사"}
             </Button>
             <a
               href={link}
               target="_blank"
               rel="noreferrer"
-              className={buttonVariants({ variant: "outline", size: "sm" })}
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
             >
               새 탭에서 열기
             </a>

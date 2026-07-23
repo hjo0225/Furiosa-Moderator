@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils";
 
-// OW 카드 = 흰 표면 + 1px 헤어라인 + 미세 그림자, 단일 radius(rounded-xl=12px).
-// 화면마다 rounded-xl/2xl 이 뒤섞이던 걸 하나로 모은다. 패딩만 className 으로 조절.
+// Furiosa 카드 = 흰 표면 + 1px silver 헤어라인 + 소프트 그림자, 10px 라디우스(design.md §3·§5 "카드(프로젝트)").
+// 단일 radius. 패딩만 className 으로 조절.
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-xl bg-surface p-5 shadow-card ring-1 ring-line", className)}
+      className={cn("rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver", className)}
       {...props}
     />
   );

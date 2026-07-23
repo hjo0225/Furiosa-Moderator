@@ -15,36 +15,55 @@ const PRETENDARD = [
 const MONO = PRETENDARD;
 
 /**
- * MindLens 디자인 시스템 — DESIGN.md SSOT.
- * Indigo-tinted neutral (Linear/Vercel류 monochrome). 단일 라이트 스킴.
- * 색상 토큰은 DESIGN.md §1-1 과 1:1 매핑.
+ * MindLens 디자인 시스템 — design.md SoT (Furiosa 팔레트, 2026-07-23 리디자인).
+ * 색상 토큰은 design.md §1 과 1:1 매핑. 기존 클래스명(ink/paper/clay/accent/line/go/pivot/nogo 등)은
+ * 유지하고 값만 Furiosa 로 리맵한다 — 컴포넌트는 이 태스크에서 손대지 않는다(점진 교체 전략).
  */
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // ── DESIGN.md 정식 토큰 (Optimal Workshop 팔레트) ──
-        // 구 indigo 복구용 값(주석): indigo #4F46E5/#4338CA/#eef2ff · violet #8B5CF6 · bg #f5f7ff
-        // · ink #1e1b4b/#4b5168/#9ca3af · clay #4F46E5 · line/border #e0e4f0 · go/pivot #10b981/#f59e0b
-        indigo: { DEFAULT: "#00A4DF", hover: "#0090C4", light: "#E5F2F6" }, // alias명 유지 → sky-blue
-        violet: { DEFAULT: "#4785FF", hover: "#3A6FE0", light: "#E5F2F6" }, // → OW blue
-        bg: "#fcfcfc",
-        surface: "#ffffff",
-        slate: "#25353F", // 다크 밴드(CTA)·Review 솔리드 버튼
-        border: { DEFAULT: "#e6e6e6" },
-        success: "#00AA64",
-        warning: "#F18134",
-        error: "#ef4444",
+        // ── Furiosa 브랜드 코어 (design.md §1 실측) — 신규 토큰명. 후속 태스크가 직접 참조. ──
+        red: { DEFAULT: "#E21500", dark: "#BC1302" },
+        obsidian: "#151515",
+        charcoal: "#444444",
+        grey: "#7F7F7F",
+        silver: "#D4D4D4",
+        platinum: "#E1E1E1",
+        canvas: "#FFFFFF",
+        // 응답자 웜 표면
+        cream: "#FFFBF6",
+        blush: "#FFF3EE",
+        "warm-border": "#F0E6DC",
+        "warm-ink-soft": "#8A6F5F",
+        // 시맨틱 — 액센트(red)와 분리, 카운트로 세지 않는 상태색(design.md §1)
+        maroon: "#6F2020",
+        // 데이터 · 바이브런트 (차트/센티먼트 카테고리 — furiosa.ai 실측, design.md §1)
+        mint: "#70E697",
+        cyan: "#76D6FF",
+        peach: "#FEC2A0",
+        lilac: "#CDBBFF",
+        lemon: "#FFFA82",
+        orange: "#FF9A52",
 
-        // ── 호환 alias (기존 paper/ink/clay 클래스를 OW 팔레트로 리맵) ──
-        ink: { DEFAULT: "#0D0D0D", soft: "#454545", faint: "#8a8a8a" },
+        // ── 호환 alias (기존 클래스명 유지, 값만 Furiosa 로 리맵) ──
+        indigo: { DEFAULT: "#E21500", hover: "#BC1302", light: "#FBEBE9" }, // 구 sky-blue alias → red
+        bg: "#FFFFFF", // → canvas
+        surface: "#FFFFFF", // → canvas
+        slate: "#151515", // 다크 밴드(CTA)·Review 솔리드 버튼 → obsidian
+        border: { DEFAULT: "#E1E1E1" }, // → platinum
+        success: "#00AA64",
+        warning: "#FF9A52", // design.md §1 시맨틱 warning = orange 실측치
+        error: "#6F2020", // design.md §1: brand-red 와 충돌 방지 위해 maroon. 구 #ef4444 폐기
+
+        ink: { DEFAULT: "#151515", soft: "#444444", faint: "#7F7F7F" }, // → obsidian/charcoal/grey
         // 표면 토큰
-        paper: { DEFAULT: "#fcfcfc", deep: "#ffffff", dim: "#f3f3f3" },
-        // 액센트 토큰 (alias → sky/blue)
-        clay: { DEFAULT: "#00A4DF", deep: "#0090C4", soft: "#4785FF", wash: "#E5F2F6" },
-        // 서브브랜드 액센트 — CSS 변수(--accent*). 기본=sky, .theme-* 가 솔루션별 색 치환.
-        // (DESIGN.md §1-1-a SSOT. ProductShell·솔루션 페이지가 컨텍스트에 테마 클래스 부여)
+        paper: { DEFAULT: "#FAF9F7", deep: "#FFFFFF", dim: "#E1E1E1" }, // → paper/canvas/platinum
+        // 액센트 토큰 (alias → red)
+        clay: { DEFAULT: "#E21500", deep: "#BC1302", soft: "#FEC2A0", wash: "#FBEBE9" },
+        // 서브브랜드 액센트 — CSS 변수(--accent*). design.md §0: 서브테마 폐기, 항상 red.
+        // (.theme-* 는 하위호환용으로 남아있지만 전부 동일한 red 값으로 통일됨 — globals.css 참고)
         // color-mix + <alpha-value>: var() 색상은 Tailwind v3 가 알파를 계산할 수 없어
         // bg-accent-solid/80 같은 modifier 클래스가 아예 생성되지 않는다(투명 렌더 버그).
         accent: {
@@ -55,12 +74,12 @@ const config: Config = {
           solid: "color-mix(in srgb, var(--accent-solid) calc(<alpha-value> * 100%), transparent)", // 채운 버튼 배경
           on: "color-mix(in srgb, var(--accent-on) calc(<alpha-value> * 100%), transparent)", // 채운 버튼 위 글자색
         },
-        // 라인
-        line: { DEFAULT: "#e6e6e6", soft: "#f3f3f3" },
+        // 라인 — design.md §3: 1px silver/platinum 헤어라인
+        line: { DEFAULT: "#D4D4D4", soft: "#E1E1E1" },
         // verdict (= success/warning/error)
         go: "#00AA64",
-        pivot: "#F18134",
-        nogo: "#ef4444",
+        pivot: "#FF9A52",
+        nogo: "#6F2020",
       },
       fontFamily: {
         sans: PRETENDARD,
@@ -87,9 +106,9 @@ const config: Config = {
       },
       borderRadius: {
         sm: "0.125rem", // 2px — 배지
-        DEFAULT: "0.5rem", // 8px — 버튼/입력/카드
+        DEFAULT: "0.5rem", // 8px — 버튼/입력/카드 (design.md §3, 유지)
         lg: "0.5rem",
-        xl: "0.75rem", // 12px — 차트 카드/모달
+        xl: "0.875rem", // 14px — 응답자(웜) 카드. design.md §3: 웜 카드 12–16px 범위 중간값
       },
       boxShadow: {
         // 참고사이트 = 플랫 카드(그림자 거의 없음). 카드는 border 의존, 그림자는 미세하게만.
@@ -98,7 +117,7 @@ const config: Config = {
         // 호환 별칭 (기존 코드용)
         soft: "0 1px 2px rgba(13,13,13,0.03)",
         lift: "0 4px 16px rgba(13,13,13,0.06)",
-        // 서브브랜드 액센트를 따르는 inset 링 (Validate=민트, Review/플랫폼=인디고)
+        // accent(red) 기반 inset 링. design.md §0: 서브테마 폐기, 단일 red.
         edge: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent)",
       },
       maxWidth: { content: "76rem", prose: "42rem" },
@@ -109,9 +128,10 @@ const config: Config = {
         },
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
         "draw-line": { from: { transform: "scaleX(0)" }, to: { transform: "scaleX(1)" } },
+        // 미사용(alias명 유지) — 구 sky-blue 펄스 → red 로 리맵. 인터뷰 진행자 오브 등 후속 태스크가 재사용 가능.
         "pulse-indigo": {
-          "0%,100%": { boxShadow: "0 0 0 0 rgba(0,164,223,0.0)" },
-          "50%": { boxShadow: "0 0 0 6px rgba(0,164,223,0.14)" },
+          "0%,100%": { boxShadow: "0 0 0 0 rgba(226,21,0,0.0)" },
+          "50%": { boxShadow: "0 0 0 6px rgba(226,21,0,0.14)" },
         },
         // 무한 마퀴 — 트랙을 동일 그룹 2개로 구성하고 한 그룹 폭(-50%)만큼 이동 → 끊김 없는 루프
         marquee: {

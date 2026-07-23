@@ -32,25 +32,36 @@ GCP 프로젝트 `mindlens-furiosa-2026` (asia-northeast3) · Cloud Run ×2 + Cl
 api/                    FastAPI
   main.py               앱 엔트리 · CORS · IP 레이트리밋 · /health
   config.py             환경변수 단일 소스 (Settings)
+  briefing/
+    pipeline.py         청크·2단 검색(코사인 넓게 → 리랭커 top-k) — 프로젝트 자료(briefing_chunks) + 전역 지식 풀(knowledge_chunks)
   services/
-    llm_client.py       OpenAI 호환 클라이언트 (재시도·구조화출력·자가교정)
+    llm_client.py       OpenAI 호환 클라이언트 (재시도·구조화출력·자가교정·rerank)
     moderator.py        한 턴의 오케스트레이션 (아키텍처 §5.2)
     guardrail.py        M-2 중립성 가드레일 (정규식 사전검사 → LLM 판정 → 재작성)
     pii.py              M-5 PII 마스킹 (저장 전, 결정론적)
+    audience.py         브리프 → 전역 페르소나 풀 검색 → 가이드 생성용 대상 청중 주입
     speech.py           STT/TTS
     store.py            저장소 로직 (Cloud SQL Postgres)
     db.py               ORM 테이블 · 커넥션 (SQLAlchemy + Cloud SQL Connector)
   routers/              projects(의뢰자) · public(응답자) · speech
-  prompts/              가이드 생성 · 모더레이터 · 요약/집계/감정
+  prompts/              가이드 생성 · 모더레이터 · 요약/집계/감정 · 오디언스
   _reference/           원본 레포에서 참고용으로만 가져온 코드. 그대로 쓰지 말 것.
+scripts/
+  ingest_knowledge.py   전역 지식 풀(knowledge_chunks) 적재 CLI — parquet → 임베딩, 멱등(--replace)
 web/                    Next.js 14 App Router
   app/projects/         의뢰자 대시보드 (C-1~C-5)
+  app/projects/benchmark/  NPU vs GPU 벤치마크 뷰 — M1/M2/M3·손익분기 S*, 측정 전엔 전부 null(—)
   app/i/[projectId]/    응답자 인터뷰 (R-1~R-4)
+  components/shell/sidebar.tsx  좌측 앱 셸(무인증 — 계정/워크스페이스 UI 없음)
+  components/benchmark/ 벤치마크 뷰 구성요소 (지표 카드 · 손익분기 패널 · 전력 차트 · 정직성 배너)
   components/           interview-flow · moderator-avatar · response-viewer
+  public/mindlens-logo.svg  서비스 로고
   hooks/useAudio.ts     마이크 캡처
   lib/recorder-session.ts  MediaRecorder 순수 로직 — "절대 reject 하지 않는다" 계약
   _reference/           원본 레포 참고 코드 (survey-api.ts). 그대로 쓰지 말 것.
 ```
+
+가이드 생성은 프로젝트 자료 풀과 전역 지식 풀(합성 페르소나 등, `scripts/ingest_knowledge.py`로 적재) 양쪽을 2단 검색(코사인 후보 → 리랭커 재정렬)으로 조회해 근거·대상 청중을 프롬프트에 주입한다. RAG는 가이드 생성 시점에만 발동하고, 인터뷰 진행 중에는 라이브 검색을 하지 않는다.
 
 ## 설계에서 물러서지 않은 것
 
@@ -110,5 +121,5 @@ cd web && npm install && npm run dev
 ## 더 읽을 것
 
 - [`PORTING.md`](PORTING.md) — 이식 경위와 판단 근거
-- [`design.md`](design.md) — 디자인 토큰 스펙 (SSOT 는 `web/styles/globals.css`)
-- [`CLAUDE.md`](CLAUDE.md) — 에이전트 작업 가이드 (명령어·불변 계약·gstack 워크플로)
+- [`design.md`](design.md) — 디자인 시스템 정본(SoT). `web/styles/globals.css`의 `@theme`가 이 문서의 구현이다.
+- [`AGENTS.md`](AGENTS.md) — 에이전트 하네스 정본(라이프사이클·게이트·프로젝트 컨텍스트). `CLAUDE.md`는 이 파일을 가리키는 한 줄이다.
