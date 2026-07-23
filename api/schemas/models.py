@@ -217,6 +217,28 @@ class BlocklistSetIn(BaseModel):
     blocklist: list[str] = Field(default_factory=list)
 
 
+class BriefRefineIn(BaseModel):
+    """브리프 정제 요청 (C-1) — 프로젝트 생성 전, 급히 적은 네 칸을 다듬는다."""
+    topic: str = ""
+    target: str = ""
+    motivation: str = ""
+    utilization: str = ""
+
+
+class RefinedField(BaseModel):
+    """정제된 한 항목 — 결과값과 '무엇을 고쳤는지' 한 줄."""
+    text: str = ""
+    note: str = ""      # 무엇을 어떻게 고쳤는지 짧게. 안 고쳤으면 빈 문자열.
+
+
+class BriefRefineOut(BaseModel):
+    """정제 결과 — 네 항목 각각의 다듬은 문장. 화면에서 원문과 나란히 비교해 보여준다."""
+    topic: RefinedField = Field(default_factory=RefinedField)
+    target: RefinedField = Field(default_factory=RefinedField)
+    motivation: RefinedField = Field(default_factory=RefinedField)
+    utilization: RefinedField = Field(default_factory=RefinedField)
+
+
 class GuideGenerateIn(BaseModel):
     """가이드 재생성 요청 — 비우면 프로젝트의 주제·대상을 그대로 쓴다."""
     topic: str = ""

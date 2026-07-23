@@ -21,6 +21,7 @@ from ..briefing import pipeline as briefing_pipeline
 from ..services.material import MaterialError, compose_guide_material, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
+from ..prompts.refine import REFINE_SYSTEM, refine_user
 from ..prompts.insight import (
     BUCKET_CLASSIFY_SYSTEM,
     CODEBOOK_SYSTEM,
@@ -36,6 +37,8 @@ from ..prompts.insight import (
 )
 from ..schemas.models import (
     BlocklistSetIn,
+    BriefRefineIn,
+    BriefRefineOut,
     GuideGenerateIn,
     GuideQuestion,
     GuideTopic,
@@ -45,6 +48,7 @@ from ..schemas.models import (
     Material,
     Project,
     ProjectCreateIn,
+    RefinedField,
     ResponseBucket,
     ScreenerSetIn,
     ThemeInsight,
@@ -90,6 +94,34 @@ def create_project(body: ProjectCreateIn) -> Project:
             discord_webhook_url=body.discord_webhook_url.strip(),
         )
     )
+
+
+@router.post("/refine-brief", response_model=BriefRefineOut)
+def refine_brief(body: BriefRefineIn) -> BriefRefineOut:
+    """C-1 브리프 정제 — 프로젝트 생성 전, 급히 적은 네 칸을 명확한 문장으로 다듬는다(NPU).
+
+    프로젝트를 만들지 않는 유틸리티다. LLM 은 표현만 다듬고 내용을 지어내지 않는다(refine.py).
+    실패하면 502 를 내되, 프론트는 정제를 '선택'으로 다뤄 실패해도 생성 흐름을 막지 않는다.
+
+    `/{pid}` 경로들보다 먼저 정의해 static 경로가 pid 로 오인되지 않게 한다.
+    """
+    if not any(v.strip() for v in (body.topic, body.target, body.motivation, body.utilization)):
+        raise HTTPException(400, "다듬을 내용을 입력하세요.")
+    try:
+        out, _ = get_llm().structured(
+            REFINE_SYSTEM,
+            refine_user(body.topic, body.target, body.motivation, body.utilization),
+            BriefRefineOut,
+            max_tokens=900,
+        )
+    except LLMError as e:
+        raise HTTPException(502, f"브리프 정제에 실패했습니다: {e}") from e
+    # 안전장치 — 빈 입력 항목을 모델이 지어내 채웠으면 되돌린다(없는 것 발명 금지, refine.py).
+    for field, value in (("topic", body.topic), ("target", body.target),
+                         ("motivation", body.motivation), ("utilization", body.utilization)):
+        if not value.strip():
+            setattr(out, field, RefinedField(text="", note=""))
+    return out
 
 
 @router.delete("/{pid}")
