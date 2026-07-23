@@ -10,6 +10,7 @@ import os
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
+from ..config import get_settings
 from ..briefing import pipeline as briefing_pipeline
 from ..services.material import MaterialError, compose_guide_material, extract_text
 
@@ -230,6 +231,7 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
                        evidence=evidence, audience=audience),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
             max_tokens=2000,
+            timeout=get_settings().llm_guide_timeout,   # 무거운 단발 생성 — 인터뷰 30s 와 분리
         )
     except LLMError as e:
         raise HTTPException(502, f"가이드 생성에 실패했습니다: {e}") from e

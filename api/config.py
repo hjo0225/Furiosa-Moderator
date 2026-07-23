@@ -38,6 +38,8 @@ class Settings(BaseModel):
     llm_disable_thinking: bool = True
 
     llm_timeout: float = 30.0
+    # 가이드 생성 등 무거운 단발 생성용 — 인터뷰 턴은 llm_timeout 유지
+    llm_guide_timeout: float = 180.0
     llm_max_retries: int = 3
 
     # --- 임베딩/리랭커 (가이드 RAG, M-1) ---------------------------------------
@@ -80,6 +82,8 @@ def get_settings() -> Settings:
         llm_model=env.get("LLM_MODEL", Settings().llm_model),
         llm_provider=env.get("LLM_PROVIDER", Settings().llm_provider),
         llm_disable_thinking=env.get("LLM_DISABLE_THINKING", "1") not in ("0", "false", "False"),
+        llm_timeout=float(env.get("LLM_TIMEOUT") or Settings().llm_timeout),
+        llm_guide_timeout=float(env.get("LLM_GUIDE_TIMEOUT") or Settings().llm_guide_timeout),
         embed_api_key=env.get("EMBED_API_KEY", "").lstrip("﻿").strip(),
         rerank_api_key=env.get("RERANK_API_KEY", "").lstrip("﻿").strip(),
         apify_token=_load_apify_token(env),
