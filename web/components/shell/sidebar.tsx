@@ -9,6 +9,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Skeleton } from "@/components/shared";
+import { listProjects, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type SidebarActive = "projects" | "benchmark";
@@ -26,6 +28,105 @@ const NAV_ITEMS: NavItem[] = [
   { key: "benchmark", href: "/projects/benchmark", label: "성능 · 벤치마크", icon: Cpu },
 ];
 
+// 서브리스트 상태 점 — 카드(design.md §5)의 배지 톤과 동일 매핑을 점으로 축약.
+const STATUS_DOT: Record<Project["status"], string> = {
+  draft: "bg-red",
+  deployed: "bg-obsidian",
+  closed: "bg-grey",
+};
+
+const SUBNAV_MAX = 8;
+
+/**
+ * `프로젝트` 네비 아래 최근 프로젝트 목록(design.md §5). 사이드바가 두 항목뿐이라
+ * 상세로 들어간 뒤 다른 프로젝트로 건너뛸 동선이 없던 문제를 여기서 메운다.
+ * pathname 이 바뀔 때마다 다시 불러와 방금 만든 프로젝트도 반영한다(가벼운 GET).
+ */
+function ProjectSubNav({
+  activeProjectId,
+  onNavigate,
+}: {
+  activeProjectId: string | null;
+  onNavigate: () => void;
+}) {
+  const pathname = usePathname();
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listProjects()
+      .then((ps) => {
+        if (cancelled) return;
+        setProjects(ps);
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  // 보조 내비일 뿐이다 — 실패해도 사이드바 본체(네비·검색·푸터)는 그대로 둔다.
+  if (loadError) return null;
+
+  if (projects === null) {
+    return (
+      <div className="mt-1 space-y-1 pb-1 pl-8 pr-2">
+        <Skeleton className="h-7 w-full" />
+        <Skeleton className="h-7 w-full" />
+        <Skeleton className="h-7 w-4/5" />
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <p className="mt-1 pb-1 pl-8 pr-3 text-meta text-grey">아직 프로젝트가 없어요</p>
+    );
+  }
+
+  const shown = projects.slice(0, SUBNAV_MAX);
+  const hasMore = projects.length > SUBNAV_MAX;
+
+  return (
+    <div className="mt-1 space-y-0.5 pb-1 pl-8 pr-2">
+      {shown.map((p) => {
+        const isActive = p.id === activeProjectId;
+        return (
+          <Link
+            key={p.id}
+            href={`/projects/${p.id}`}
+            onClick={onNavigate}
+            aria-current={isActive ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-meta transition-colors",
+              isActive ? "bg-blush text-red font-medium" : "text-charcoal hover:bg-paper",
+            )}
+          >
+            <span
+              className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[p.status])}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1 truncate">{p.title || p.topic}</span>
+          </Link>
+        );
+      })}
+      {hasMore && (
+        <Link
+          href="/projects"
+          onClick={onNavigate}
+          className="block px-2 py-1.5 text-meta font-medium text-grey transition-colors hover:text-charcoal"
+        >
+          전체 보기
+        </Link>
+      )}
+    </div>
+  );
+}
+
 /**
  * `active` 를 안 주면 현재 경로로 유추한다(`/projects/benchmark` 이하만 benchmark,
  * 그 외 `/projects/*` 는 projects). 레이아웃이 서버 컴포넌트로 남을 수 있도록
@@ -35,6 +136,15 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
   const pathname = usePathname();
   const resolvedActive: SidebarActive =
     active ?? (pathname?.startsWith("/projects/benchmark") ? "benchmark" : "projects");
+  // 서브리스트 활성 강조용 — /projects/{id} 형태일 때만 id, /projects/new·/benchmark 는 제외.
+  const pathSegments = pathname?.split("/").filter(Boolean) ?? [];
+  const activeProjectId =
+    pathSegments[0] === "projects" &&
+    pathSegments[1] &&
+    pathSegments[1] !== "new" &&
+    pathSegments[1] !== "benchmark"
+      ? pathSegments[1]
+      : null;
   const [mobileOpen, setMobileOpen] = useState(false);
   // md 이상은 항상 보이는 고정 사이드바라 아래 "닫힘" a11y 잠금을 절대 걸면 안 된다.
   // 뷰포트를 직접 추적해서, md 미만 + 닫힘일 때만 잠근다(md: 로는 aria/inert 를
@@ -137,22 +247,31 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
           {NAV_ITEMS.map(({ key, href, label, icon: Icon }) => {
             const isActive = resolvedActive === key;
             return (
-              <Link
-                key={key}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-base font-medium transition-colors",
-                  isActive ? "bg-blush text-red" : "text-charcoal hover:bg-paper",
+              <div key={key}>
+                <Link
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-base font-medium transition-colors",
+                    isActive ? "bg-blush text-red" : "text-charcoal hover:bg-paper",
+                  )}
+                >
+                  <Icon
+                    className={cn("h-4 w-4", isActive ? "text-red" : "text-grey")}
+                    aria-hidden="true"
+                  />
+                  {label}
+                </Link>
+                {/* 프로젝트 네비 아래 최근 프로젝트 서브리스트(design.md §5) — 상세로 들어간
+                    뒤에도 다른 프로젝트로 바로 건너뛸 동선을 준다. */}
+                {key === "projects" && (
+                  <ProjectSubNav
+                    activeProjectId={activeProjectId}
+                    onNavigate={() => setMobileOpen(false)}
+                  />
                 )}
-              >
-                <Icon
-                  className={cn("h-4 w-4", isActive ? "text-red" : "text-grey")}
-                  aria-hidden="true"
-                />
-                {label}
-              </Link>
+              </div>
             );
           })}
         </nav>
