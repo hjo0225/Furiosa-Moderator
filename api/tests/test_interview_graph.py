@@ -591,3 +591,42 @@ def test_reflect_ignores_unknown_question_id(fakes):
     led = g.get_state(config).values["ledger"]
     assert led["q1"]["facts"] == ["진짜 사실"]
     assert "q99" not in led                                  # 없는 문항은 조용히 무시
+
+
+# --- 보강 D: 모순 적어놓고 probe 로 라벨된 턴 → challenge 로 승격 -----------------
+
+def test_contradiction_promotes_probe_to_challenge():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": "가격 안 본다더니 최저가만 찾음"}})
+    assert patch["action"] == "challenge"        # 모순 메모가 있으면 probe 가 아니라 challenge
+    assert patch["is_probe"] is False
+
+
+def test_contradiction_promotes_clarify_to_challenge():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "clarify", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": "어제는 배민, 오늘은 안 쓴다더니"}})
+    assert patch["action"] == "challenge"
+
+
+def test_no_contradiction_leaves_probe():
+    from api.interview.nodes.strategize import strategize
+    patch = strategize({"asked": 4, "action": "probe", "question_id": "q1", "probe_streak": 0,
+                        "ledger": _thin_ledger(), "analysis": {"contradiction": ""}})
+    assert "action" not in patch                 # 모순 없으면 probe 그대로
+
+
+def test_contradiction_labeled_probe_still_challenges(fakes):
+    fs, set_llm = fakes
+    llm = set_llm(
+        outs=[ListenOut(action="probe", question_id="q1", contradiction="가격 안 본다더니 최저가만 찾음"),
+              ReflectOut()],
+        texts=["오프닝?", "챌린지 질문?"])
+    g = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "s1"}}
+    _start(g, config)
+    g.invoke(Command(resume="무조건 최저가요"), config)
+    v = g.get_state(config).values
+    assert v["action"] == "challenge"                    # probe 로 왔지만 모순 있어 승격
+    assert "가격 안 본다더니" in llm.text_prompts[-1]      # 모순이 생성 프롬프트에 실린다
