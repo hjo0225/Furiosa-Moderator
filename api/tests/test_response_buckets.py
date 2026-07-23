@@ -28,12 +28,18 @@ def test_bucket_defaults_empty():
     assert q.response_buckets == []
 
 
-def test_guide_system_has_bucket_rules():
+def test_guide_system_forbids_pre_declared_buckets():
+    # 스펙 C: 코드북은 측정 전에 만들지 않는다. 가이드 프롬프트는 버킷을 비우라고 지시한다.
     assert "response_buckets" in GUIDE_SYSTEM
-    assert "definition" in GUIDE_SYSTEM
-    assert "상호배타" in GUIDE_SYSTEM        # MECE
-    assert "is_catchall" in GUIDE_SYSTEM
-    assert "is_negative_case" in GUIDE_SYSTEM
+    assert "빈 배열" in GUIDE_SYSTEM
+    assert "귀납" in GUIDE_SYSTEM
+
+
+def test_guide_system_pushes_narrative_questions():
+    # 랭킹·빈도·예/아니오 설문 문형을 막고 사건 재구성을 요구한다.
+    assert "심층 인터뷰" in GUIDE_SYSTEM
+    assert "예/아니오" in GUIDE_SYSTEM
+    assert "사건" in GUIDE_SYSTEM
 
 
 def test_normalize_adds_catchall_and_ids():

@@ -146,8 +146,11 @@ export type Insight = {
   themes: ThemeInsight[];
   sentiment: Record<string, number>;
   // 문항별 응답 버킷 분포(F6.4) — { question_id: { bucket_id: 응답자 수 } }.
-  // sentiment 와 같이 DB 실측(LLM 이 세지 않음). bucket_id → 라벨은 가이드의 response_buckets 로 매핑.
+  // sentiment 와 같이 DB 실측(LLM 이 세지 않음). bucket_id → 라벨은 codebooks 로 매핑.
   bucket_distribution: Record<string, Record<string, number>>;
+  // 문항별 코드북(스펙 C) — { question_id: ResponseBucket[] }. 전사에서 귀납 생성한 라벨.
+  // 결과 화면은 여기서 라벨을 먼저 찾고, 없으면(구 데이터) 가이드 버킷으로 폴백한다.
+  codebooks: Record<string, ResponseBucket[]>;
   // 문항별 AI 요약(F6.3) — bucket_distribution 이 '분류·개수'라면 이건 '무엇을 말했나'의 서술 요약.
   question_summaries: QuestionSummary[];
   session_count: number;

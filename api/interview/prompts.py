@@ -89,38 +89,19 @@ def _ledger_blocks(guide: dict, ledger: dict) -> tuple[str, str]:
     return pending_block, thin_block
 
 
-def _bucket_block(guide: dict, current_qid: str) -> str:
-    """지금 문항의 응답 버킷을 label+정의로 나열 — 분석가가 버킷 적합도를 판단하는 재료.
-
-    버킷이 없거나 문항을 못 찾으면 빈 문자열(호출부가 블록을 생략)."""
-    if not current_qid:
-        return ""
-    q = _qmap(guide).get(current_qid)
-    if not q:
-        return ""
-    buckets = q.get("response_buckets") or []
-    if not buckets:
-        return ""
-    lines = []
-    for b in buckets:
-        label = b.get("label", "")
-        definition = b.get("definition", "")
-        lines.append(f"- {label}" + (f": {definition}" if definition else ""))
-    return "\n".join(lines)
-
-
 def analysis_user(
     guide: dict, messages: list, utterance: str, asked: int, probe_streak: int, ledger: dict,
     pace_line: str = "", current_qid: str = "",
 ) -> str:
+    # current_qid 는 프로빙이 '지금 어느 문항을 다루는지' 문맥용으로만 남겨둔다. 예전엔 이 문항의
+    # 응답 버킷을 여기 실어 "어느 버킷에도 안 들어가면 probe" 로 썼는데(스펙 C), 그러면 프로빙의
+    # 목적이 '이야기 캐기'가 아니라 '분류 가능한 답 받아내기'가 됐다. 버킷은 인터뷰 뒤 전사에서
+    # 만든다 — 프로빙은 사건·감정·이유만 좇는다.
     pending_block, thin_block = _ledger_blocks(guide, ledger)
-    bucket_block = _bucket_block(guide, current_qid)
     return (
         f"[조사 목표]\n{guide.get('goal', '') or '(목표 미기재)'}\n\n"
         f"[지금까지 대화] (진행자 질문 {asked}회)\n{_convo(messages, utterance)}\n\n"
         f"[응답자의 직전 답변]\n{utterance or '(없음)'}\n\n"
-        + (f"[지금 문항의 응답 버킷] (직전 답변이 어느 버킷에도 또렷이 안 들어가면 그 자체가 probe 신호)\n"
-           f"{bucket_block}\n\n" if bucket_block else "")
         + "직전 답변을 앞선 발언들과 대조해 모순이 있으면 contradiction 에 한 줄로 적으세요(없으면 빈 문자열).\n"
         "직전 답변에 당신이 모르는 용어·브랜드·고유명사가 있으면 unknown_terms 에 그대로 나열하세요"
         "(아는 척 금지 — 없으면 빈 배열).\n"

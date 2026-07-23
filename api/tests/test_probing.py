@@ -75,20 +75,12 @@ def test_probe_directives_cover_all_types(pt):
 
 # --- analysis_user: 버킷 블록 노출/생략 ----------------------------------------
 
-def test_analysis_user_includes_buckets_for_current_qid():
+# 스펙 C: 프로빙에서 버킷을 뺐다. 버킷이 있는 문항이어도 분석 프롬프트에 실리지 않는다 —
+# 프로빙 목적이 '분류 가능한 답 받아내기'가 아니라 '이야기 캐기'가 되도록.
+def test_analysis_user_never_includes_buckets():
     out = analysis_user(BUCKET_GUIDE, [], "답변", 0, 0, {}, current_qid="q1")
-    assert "[지금 문항의 응답 버킷]" in out
-    assert "배달의민족" in out and "쿠팡이츠" in out
-
-
-def test_analysis_user_omits_block_without_current_qid():
-    out = analysis_user(BUCKET_GUIDE, [], "답변", 0, 0, {}, current_qid="")
     assert "[지금 문항의 응답 버킷]" not in out
-
-
-def test_analysis_user_omits_block_when_question_has_no_buckets():
-    out = analysis_user(BUCKET_GUIDE, [], "답변", 0, 0, {}, current_qid="q2")
-    assert "[지금 문항의 응답 버킷]" not in out
+    assert "배달의민족" not in out
 
 
 # --- strategize: 피로 강등 ------------------------------------------------------

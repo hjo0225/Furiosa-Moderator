@@ -174,3 +174,31 @@ def test_report_accepts_dict_guide():
     report = evals.guide_quality_report(guide)
     assert report["leading"] == ["q1"]
     assert report["mece_ok"] is True  # 버킷 없으면 겹침 경고도 없음
+
+
+# --- 스펙 C: 설문형 질문·동어반복 검출 -------------------------------------
+def test_closed_yes_no_question_flagged():
+    assert evals.is_closed_or_survey("최근 3개월 동안 제로 탄산음료를 구입한 적이 있나요?")[0]
+
+
+def test_ranking_survey_frame_flagged():
+    assert evals.is_closed_or_survey("가장 큰 영향을 주는 요소는 무엇인가요?")[0]
+    assert evals.is_closed_or_survey("얼마나 자주 구매하시나요?")[0]
+
+
+def test_narrative_question_not_flagged():
+    assert not evals.is_closed_or_survey(
+        "가장 최근에 제로 탄산음료를 사셨던 때를 떠올려 볼게요. 어떤 상황이었나요?"
+    )[0]
+
+
+def test_repeated_grid_questions_detected():
+    qs = [
+        {"id": "q1", "text": "제로 탄산음료를 구매할 때 가장 먼저 확인하는 것은?", "goal": "구매 시 확인 요소"},
+        {"id": "q2", "text": "제로 탄산음료를 구매할 때 가장 큰 영향을 주는 요소는?", "goal": "구매 영향 요소"},
+        {"id": "q3", "text": "가장 최근 마셨던 순간을 떠올려 그 장면을 들려주세요.", "goal": "최근 음용 경험 재구성"},
+    ]
+    report = evals.guide_quality_report({"questions": qs})
+    assert ("q1", "q2") in report["repeated"]
+    assert report["n_repeated"] >= 1
+    assert report["n_closed"] >= 2      # q1·q2 는 '가장 ~' 설문 문형

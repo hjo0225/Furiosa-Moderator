@@ -349,6 +349,10 @@ class Insight(BaseModel):
     # 문항별 응답 버킷 분포(F6.4) — {question_id: {bucket_id: N}}. sentiment 와 똑같이
     # LLM 이 아니라 DB 실측으로 채운다(계약 1). LLM 은 개별 답변을 버킷으로 '분류'만 한다.
     bucket_distribution: dict = Field(default_factory=dict)
+    # 문항별 코드북(스펙 C) — {question_id: [ResponseBucket]}. 가이드가 아니라 **인사이트가**
+    # 코드북을 소유한다: 인터뷰가 끝난 뒤 실제 전사에서 귀납적으로 만든다. 결과 화면은 라벨을
+    # 여기서 먼저 찾고, 없으면 (구 데이터) 가이드 버킷으로 폴백한다.
+    codebooks: dict[str, list[ResponseBucket]] = Field(default_factory=dict)
     # 문항별 AI 요약(F6.3) — 문항마다 headline+summary. 버킷 분포가 '분류·개수'라면
     # 이건 '무엇을 말했나'의 서술 요약이다. theme 요약처럼 LLM 해석 출력(세지 않는다).
     question_summaries: list[QuestionSummary] = Field(default_factory=list)
