@@ -1,11 +1,18 @@
 import { cn } from "@/lib/utils";
 
-// Furiosa 카드 = 흰 표면 + 1px silver 헤어라인 + 소프트 그림자, 10px 라디우스(design.md §3·§5 "카드(프로젝트)").
-// 단일 radius. 패딩만 className 으로 조절.
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+type CardElement = "div" | "section" | "article";
+
+interface CardProps extends React.HTMLAttributes<HTMLElement> {
+  as?: CardElement;
+}
+
+// Furiosa 카드 = 흰 표면 + 1px silver 헤어라인 + 소프트 그림자, 10px 라디우스(토큰 `rounded-card`,
+// design.md §3·§5 "카드(프로젝트)"). 단일 radius. 패딩만 className 으로 조절.
+// `as` 로 시맨틱 태그(section/article) 선택 — 기본은 div.
+export function Card({ className, as: Component = "div", ...props }: CardProps) {
   return (
-    <div
-      className={cn("rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver", className)}
+    <Component
+      className={cn("rounded-card bg-white p-5 shadow-card ring-1 ring-silver", className)}
       {...props}
     />
   );

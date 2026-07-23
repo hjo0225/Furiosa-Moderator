@@ -2,6 +2,7 @@
 
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { Card } from "@/components/shared";
 import type { BenchmarkResult } from "@/lib/api";
 
 import { fmtNum } from "./format";
@@ -29,7 +30,7 @@ export function BreakevenPanel({ result }: { result: BenchmarkResult }) {
     : SCHEMATIC_CURVE;
 
   return (
-    <section className="rounded-[10px] bg-white p-6 shadow-card ring-1 ring-silver">
+    <Card as="section" className="p-6">
       <div className="flex flex-wrap items-center gap-2">
         <p className="eyebrow">손익분기</p>
         {!hasCurve && (
@@ -117,6 +118,6 @@ export function BreakevenPanel({ result }: { result: BenchmarkResult }) {
           </div>
         </div>
       </div>
-    </section>
+    </Card>
   );
 }

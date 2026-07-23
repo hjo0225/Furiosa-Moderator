@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { Card } from "@/components/shared";
 import type { BenchmarkResult } from "@/lib/api";
 
 // design.md §1: NPU=brand-red(전력선), 동시 세션 바는 중립 grey/silver — 두 색을 하나의 대조
@@ -26,7 +27,7 @@ export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
   const hasData = result.power_timeseries.length > 1;
 
   return (
-    <section className="rounded-[10px] bg-white p-6 shadow-card ring-1 ring-silver">
+    <Card as="section" className="p-6">
       <p className="eyebrow">24h 전력 시계열</p>
       {!hasData ? (
         <div className="mt-3 flex h-56 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-silver bg-paper px-6 text-center">
@@ -102,6 +103,6 @@ export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
           </div>
         </div>
       )}
-    </section>
+    </Card>
   );
 }

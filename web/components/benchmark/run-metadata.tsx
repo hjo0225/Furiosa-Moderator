@@ -1,3 +1,4 @@
+import { Card } from "@/components/shared";
 import type { BenchmarkResult } from "@/lib/api";
 
 import { fmtStr } from "./format";
@@ -22,7 +23,7 @@ export function RunMetadataAppendix({ result }: { result: BenchmarkResult }) {
   ];
 
   return (
-    <section className="rounded-[10px] bg-paper p-6 ring-1 ring-silver">
+    <Card as="section" className="bg-paper p-6 shadow-none">
       <p className="eyebrow">부록 · 실행 메타데이터</p>
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 text-meta sm:grid-cols-3">
         {items.map(([label, value]) => (
@@ -38,6 +39,6 @@ export function RunMetadataAppendix({ result }: { result: BenchmarkResult }) {
         데이터 소스 · PDU 1s · furiosa-metrics-exporter → Prometheus · furiosa-llm /metrics · NTP
         100ms 이내 동기
       </p>
-    </section>
+    </Card>
   );
 }

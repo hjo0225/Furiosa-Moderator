@@ -1,3 +1,4 @@
+import { Card } from "@/components/shared";
 import type { BenchmarkResult } from "@/lib/api";
 
 import { fmtNum, gateStatus, primaryRow } from "./format";
@@ -17,7 +18,7 @@ export function MetricCards({ result }: { result: BenchmarkResult }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {/* M1 */}
-      <div className="flex flex-col rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver">
+      <Card className="flex flex-col">
         <p className="eyebrow">M1</p>
         <p className="mt-2 text-meta font-medium text-obsidian">
           SLA 충족 동시 세션(세션슬롯/카드)
@@ -44,10 +45,10 @@ export function MetricCards({ result }: { result: BenchmarkResult }) {
         <span className="mt-3 inline-flex w-fit items-center rounded-md bg-blush px-2 py-0.5 text-2xs font-medium text-red-dark">
           세션 슬롯 ≠ 동시 생성
         </span>
-      </div>
+      </Card>
 
       {/* M2 */}
-      <div className="flex flex-col rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver">
+      <Card className="flex flex-col">
         <p className="eyebrow">M2</p>
         <p className="mt-2 text-meta font-medium text-obsidian">세션당 Wh(벽면·idle 포함)</p>
         <p className="mt-3 font-telemetry text-title text-red">
@@ -68,10 +69,10 @@ export function MetricCards({ result }: { result: BenchmarkResult }) {
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* M3 */}
-      <div className="flex flex-col rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver">
+      <Card className="flex flex-col">
         <p className="eyebrow">M3</p>
         <p className="mt-2 text-meta font-medium text-obsidian">버킷 분류 κ</p>
         <p className="mt-3 font-telemetry text-title text-red">
@@ -81,7 +82,7 @@ export function MetricCards({ result }: { result: BenchmarkResult }) {
           Δκ <span className="font-telemetry text-charcoal">{fmtNum(row?.delta_kappa, { digits: 2, signed: true })}</span>
         </p>
         <GateBadge gate={gate} className="mt-3" />
-      </div>
+      </Card>
     </div>
   );
 }

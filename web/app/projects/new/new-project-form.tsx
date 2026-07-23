@@ -68,7 +68,7 @@ export function NewProjectForm() {
 
         <form
           onSubmit={submit}
-          className="mt-8 rounded-[10px] bg-white p-5 shadow-card ring-1 ring-silver"
+          className="mt-8 rounded-card bg-white p-5 shadow-card ring-1 ring-silver"
         >
           <div className="space-y-3">
             <label className="block">

@@ -191,7 +191,8 @@ def fake_insight_llm(monkeypatch):
             return "요약본", Usage("furiosa-ai/Qwen3-32B-FP8", 90, 40)
 
         def structured(self, system, user, schema, **k):
-            return schema(overall="전체 요약"), Usage("furiosa-ai/Qwen3-32B-FP8", 200, 500)
+            # _GenInsight 는 themes 를 필수로 승격했다(keywords 누락 사고 방지) — 빈 배열로 채운다.
+            return schema(overall="전체 요약", themes=[]), Usage("furiosa-ai/Qwen3-32B-FP8", 200, 500)
 
     monkeypatch.setattr(pm, "get_llm", lambda: _FakeLLM())
 

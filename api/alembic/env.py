@@ -14,7 +14,11 @@ from api.services.db import Base, _engine
 config = context.config
 if config.config_file_name is not None:
     try:
-        fileConfig(config.config_file_name)
+        # disable_existing_loggers=False 필수 — 기본값 True 로 두면 기동 시
+        # 실행되는 마이그레이션(db.py 의 command.upgrade)이 fileConfig 를 타면서
+        # import 시점에 만들어진 앱 로거(mindlens, api.services.*, api.interview.*)를
+        # 전부 disable 시켜버려 운영 로그가 전혀 안 찍히는 문제가 있었다.
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
     except Exception:   # noqa: BLE001 — 로깅 설정 실패가 마이그레이션을 막지 않게
         pass
 

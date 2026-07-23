@@ -108,6 +108,7 @@ const config: Config = {
         sm: "0.125rem", // 2px — 배지
         DEFAULT: "0.5rem", // 8px — 버튼/입력/카드 (design.md §3, 유지)
         lg: "0.5rem",
+        card: "0.625rem", // 10px — 의뢰자 카드 <Card> 전용 토큰(design.md §3)
         xl: "0.875rem", // 14px — 응답자(웜) 카드. design.md §3: 웜 카드 12–16px 범위 중간값
       },
       boxShadow: {

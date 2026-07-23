@@ -81,9 +81,11 @@ class LLMClient:
         self._cli = None
         self.embed_model = s.embed_model
         self.embed_api_key = (s.embed_api_key or "").lstrip("﻿").strip()
+        self.embed_base_url = s.embed_base_url or s.llm_base_url
         self._embed_cli = None
         self.rerank_model = s.rerank_model
         self.rerank_api_key = (s.rerank_api_key or "").lstrip("﻿").strip()
+        self.rerank_base_url = s.rerank_base_url or s.llm_base_url
 
     def _client(self):
         if self._cli is None:
@@ -126,7 +128,7 @@ class LLMClient:
 
             self._embed_cli = OpenAI(
                 api_key=self.embed_api_key or "unused",
-                base_url=self.base_url,   # 같은 Furiosa 엔드포인트, 키만 다르다
+                base_url=self.embed_base_url,   # 기본은 llm_base_url, 분리 서빙 시 EMBED_BASE_URL
                 timeout=self.timeout,
                 max_retries=0,
             )
@@ -187,7 +189,7 @@ class LLMClient:
         for attempt in range(self.max_retries):
             try:
                 resp = httpx.post(
-                    f"{self.base_url}/rerank",
+                    f"{self.rerank_base_url}/rerank",
                     headers={"Authorization": f"Bearer {self.rerank_api_key}"},
                     json={"model": m, "query": query, "documents": docs, "top_n": top_n},
                     timeout=self.timeout,

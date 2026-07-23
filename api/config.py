@@ -43,10 +43,14 @@ class Settings(BaseModel):
     llm_max_retries: int = 3
 
     # --- 임베딩/리랭커 (가이드 RAG, M-1) ---------------------------------------
+    # base_url 이 비면 llm_base_url 을 따른다. 클라우드 엔드포인트는 세 모델이
+    # 한 URL 이지만, 로컬 furiosa-llm serve 는 모델당 포트가 갈라진다.
     embed_model: str = "furiosa-ai/Qwen3-Embedding-8B"
     embed_api_key: str = ""
+    embed_base_url: str = ""
     rerank_model: str = "furiosa-ai/Qwen3-Reranker-8B"
     rerank_api_key: str = ""
+    rerank_base_url: str = ""
 
     # --- 웹 리서치 (Apify) ----------------------------------------------------
     apify_token: str = ""
@@ -85,7 +89,9 @@ def get_settings() -> Settings:
         llm_timeout=float(env.get("LLM_TIMEOUT") or Settings().llm_timeout),
         llm_guide_timeout=float(env.get("LLM_GUIDE_TIMEOUT") or Settings().llm_guide_timeout),
         embed_api_key=env.get("EMBED_API_KEY", "").lstrip("﻿").strip(),
+        embed_base_url=env.get("EMBED_BASE_URL", ""),
         rerank_api_key=env.get("RERANK_API_KEY", "").lstrip("﻿").strip(),
+        rerank_base_url=env.get("RERANK_BASE_URL", ""),
         apify_token=_load_apify_token(env),
         gcp_project=env.get("GCP_PROJECT", "") or env.get("GOOGLE_CLOUD_PROJECT", ""),
         stt_location=env.get("STT_LOCATION", Settings().stt_location),
