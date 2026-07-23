@@ -305,16 +305,21 @@ class LLMClient:
         max_tokens: int = 1024,
         model: str | None = None,
         max_attempts: int = 3,
+        timeout: float | None = None,
     ) -> tuple[T, Usage]:
         """forced tool_choice 로 Pydantic 스키마에 맞는 객체를 받는다.
 
         검증 실패 시 오류 문구를 덧붙여 최대 max_attempts 회 재시도(자가교정).
         재시도로 태운 토큰도 누적해 반환한다.
         tool_calls 를 못 받으면 json_object 경로로 폴백한다.
+        timeout 은 호출별 override(가이드 등 무거운 단발) — None 이면 클라이언트 기본.
         """
         from pydantic import ValidationError
 
         m = model or self.model
+        # None 이면 timeout 키 자체를 넣지 않는다 — SDK 에서 timeout=None 은 '무제한'이라
+        # 클라이언트 기본(30s)과 다르다.
+        call_timeout = {"timeout": timeout} if timeout is not None else {}
         tool = {
             "type": "function",
             "function": {
@@ -340,6 +345,7 @@ class LLMClient:
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": "respond"}},
                 **self._extra(),
+                **call_timeout,
             )
             u = resp.usage
             total_in += u.prompt_tokens if u else 0
@@ -359,6 +365,7 @@ class LLMClient:
                 return self._structured_json(
                     system, user, schema, max_tokens=cur_max, model=m,
                     max_attempts=max_attempts, carry=(total_in, total_out),
+                    timeout=timeout,
                 )
             try:
                 payload = json.loads(calls[0].function.arguments or "{}")
@@ -381,10 +388,12 @@ class LLMClient:
         model: str,
         max_attempts: int = 3,
         carry: tuple[int, int] = (0, 0),
+        timeout: float | None = None,
     ) -> tuple[T, Usage]:
         """json_object 폴백 — 스키마를 프롬프트에 주입하고 검증 재시도."""
         from pydantic import ValidationError
 
+        call_timeout = {"timeout": timeout} if timeout is not None else {}   # None 이면 키 생략(SDK '무제한' 회피)
         schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
         sys = (
             f"{system}\n\n아래 JSON 스키마에 정확히 맞는 JSON 객체 하나로만 "
@@ -404,6 +413,7 @@ class LLMClient:
                 ],
                 response_format={"type": "json_object"},
                 **self._extra(),
+                **call_timeout,
             )
             u = resp.usage
             total_in += u.prompt_tokens if u else 0

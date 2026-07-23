@@ -100,6 +100,13 @@ def search_chunks(pid: str, query: str, k: int = 3, *,
     return [{**cands[i], "score": score} for i, score in ranked if 0 <= i < len(cands)][:k]
 
 
+def has_knowledge(corpus: str) -> bool:
+    """코퍼스에 행이 하나라도 있나 — 비어 있으면 상위 배선이 통째로 스킵(무동작)."""
+    with db_session() as s:
+        stmt = select(KnowledgeChunkRow.id).where(KnowledgeChunkRow.corpus == corpus).limit(1)
+        return s.execute(stmt).first() is not None
+
+
 def search_knowledge(query: str, corpus: str | None = None, k: int = 5, *,
                      meta_filters: dict | None = None, keywords: list[str] | None = None,
                      candidates: int = 30) -> list[dict]:
@@ -117,8 +124,7 @@ def search_knowledge(query: str, corpus: str | None = None, k: int = 5, *,
     stock-PG FTS 엔 형태소 토크나이저가 없어 부분일치 ILIKE 가 이식성 있는 선택.
     리랭커 실패면 코사인 순서 폴백.
 
-    NOTE(RAG-5): 인프라만 — generate_guide 에 아직 배선하지 않는다(코퍼스명·질의·meta
-    스키마가 데이터 확정 후 정해진다).
+    소비처: services/audience.collect_personas (RAG-7) — 가이드 생성 시 브리프로 검색.
     """
     def with_filters(stmt):
         """corpus + meta_filters(동등/범위) 공통 WHERE — 벡터·키워드 쿼리가 함께 쓴다."""
