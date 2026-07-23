@@ -106,12 +106,18 @@ class LLMClient:
             return {}
         return {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
 
-    def _call(self, **kwargs):
-        """재시도 래퍼 — 429/5xx/연결오류에 지수 백오프, 4xx 는 즉시 raise."""
+    def _call(self, *, retries: int | None = None, **kwargs):
+        """재시도 래퍼 — 429/5xx/연결오류에 지수 백오프, 4xx 는 즉시 raise.
+
+        retries 는 호출별 override(best-effort 부수 작업의 벽시계 상한용) — None 이면
+        self.max_retries(기본 동작 불변). kwargs 로는 절대 흘려보내지 않는다(OpenAI API 가
+        모르는 파라미터).
+        """
         from openai import APIConnectionError, APIStatusError, APITimeoutError
 
+        attempts = self.max_retries if retries is None else max(1, retries)
         last: Exception | None = None
-        for attempt in range(self.max_retries):
+        for attempt in range(attempts):
             try:
                 return self._client().chat.completions.create(**kwargs)
             except (APIStatusError, APIConnectionError, APITimeoutError) as e:
@@ -120,7 +126,7 @@ class LLMClient:
                 if status and status < 500 and status != 429:
                     raise LLMError(f"LLM {status}: {e}") from e
                 time.sleep(_BACKOFF**attempt)
-        raise LLMError(f"LLM 호출이 {self.max_retries}회 모두 실패했습니다: {last}") from last
+        raise LLMError(f"LLM 호출이 {attempts}회 모두 실패했습니다: {last}") from last
 
     def _embed_client(self):
         if self._embed_cli is None:
@@ -311,6 +317,7 @@ class LLMClient:
         model: str | None = None,
         max_attempts: int = 3,
         timeout: float | None = None,
+        retries: int | None = None,
     ) -> tuple[T, Usage]:
         """forced tool_choice 로 Pydantic 스키마에 맞는 객체를 받는다.
 
@@ -318,6 +325,8 @@ class LLMClient:
         재시도로 태운 토큰도 누적해 반환한다.
         tool_calls 를 못 받으면 json_object 경로로 폴백한다.
         timeout 은 호출별 override(가이드 등 무거운 단발) — None 이면 클라이언트 기본.
+        retries 는 _call 의 전송 재시도 상한 override(벽시계 상한용) — None 이면 클라이언트
+        기본(self.max_retries). json_object 폴백(_structured_json)에는 전달하지 않는다(불변).
         """
         from pydantic import ValidationError
 
@@ -340,6 +349,7 @@ class LLMClient:
 
         for _ in range(max(1, max_attempts)):
             resp = self._call(
+                retries=retries,
                 model=m,
                 max_tokens=cur_max,
                 temperature=_TEMP_STRUCTURED,
