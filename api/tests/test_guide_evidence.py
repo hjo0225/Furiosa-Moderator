@@ -11,7 +11,7 @@ import api.briefing.pipeline as bp
 import api.main as main
 from api.prompts.guide import guide_user
 from api.routers import projects as pm
-from api.schemas.models import GuideQuestion, InterviewGuide, Material, Project
+from api.schemas.models import GuideQuestion, InterviewGuide, Project
 
 
 # ── 프롬프트 레벨 ────────────────────────────────────────────────
@@ -39,8 +39,7 @@ def test_collect_evidence_dedupes_caps_formats(monkeypatch):
         ]
 
     monkeypatch.setattr(bp, "search_chunks", fake)
-    monkeypatch.setattr(pm.store, "list_materials",
-                        lambda pid: [Material(source="web", angle="현상", text="자료")])
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: True)   # 자료 있음 → 근거 검색 진입
     p = Project(id="p1", topic="주제", target="20대", utilization="온보딩")
     out = pm._collect_evidence("p1", p)
     lines = out.splitlines()
@@ -56,8 +55,7 @@ def test_collect_evidence_absorbs_search_failure(monkeypatch):
         raise RuntimeError("rerank down")
 
     monkeypatch.setattr(bp, "search_chunks", boom)
-    monkeypatch.setattr(pm.store, "list_materials",
-                        lambda pid: [Material(source="web", angle="현상", text="자료")])
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: True)   # 자료 있음 → 근거 검색 진입
     p = Project(id="p1", topic="주제", target="20대", utilization="온보딩")
     assert pm._collect_evidence("p1", p) == ""      # 검색 실패는 흡수 → 빈 근거
 
@@ -68,8 +66,7 @@ def test_collect_evidence_skips_활용_when_utilization_empty(monkeypatch):
         bp, "search_chunks",
         lambda pid, q, k=3, *, angle=None, candidates=30: calls.append(angle) or [],
     )
-    monkeypatch.setattr(pm.store, "list_materials",
-                        lambda pid: [Material(source="web", angle="현상", text="자료")])
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: True)   # 자료 있음 → 근거 검색 진입
     p = Project(id="p1", topic="주제", target="20대")   # utilization=""
     pm._collect_evidence("p1", p)
     assert set(calls) == {"현상", "원인"}               # 활용 슬롯은 건너뜀
@@ -79,7 +76,7 @@ def test_collect_evidence_short_circuits_when_no_materials(monkeypatch):
     # 자료 풀이 비면 임베딩(search_chunks) 호출 없이 즉시 빈 근거 — 불필요 네트워크 방지(I-1).
     calls = []
     monkeypatch.setattr(bp, "search_chunks", lambda *a, **k: calls.append(1) or [])
-    monkeypatch.setattr(pm.store, "list_materials", lambda pid: [])   # 자료 없음
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: False)   # 자료 없음
     p = Project(id="p1", topic="주제", target="20대", utilization="온보딩")
 
     assert pm._collect_evidence("p1", p) == ""      # 근거 없이 빠진다
@@ -107,8 +104,7 @@ def test_generate_guide_injects_evidence(monkeypatch):
     )
     monkeypatch.setattr(pm.store, "get_slot_summaries", lambda pid: {})  # 자료 요약 없음
     monkeypatch.setattr(pm.store, "save_guide", lambda pid, g: g)
-    monkeypatch.setattr(pm.store, "list_materials",                      # 자료 풀 있음 → 근거 검색 진입
-                        lambda pid: [Material(source="web", angle="현상", text="자료")])
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: True)   # 자료 풀 있음 → 근거 검색 진입
     monkeypatch.setattr(
         bp, "search_chunks",
         lambda pid, q, k=3, *, angle=None, candidates=30: [

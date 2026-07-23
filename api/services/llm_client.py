@@ -17,6 +17,7 @@ PORTING.md §2 의 3개 수정 지점이 여기서 해소된다:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -27,6 +28,8 @@ from pydantic import BaseModel
 from ..config import get_settings
 
 T = TypeVar("T", bound=BaseModel)
+
+log = logging.getLogger(__name__)
 
 _BACKOFF = 1.5
 # 구조화 출력 truncation 재시도 시 max_tokens 상한
@@ -355,7 +358,12 @@ class LLMClient:
             # 잘린 응답은 검증을 '통과'해도 기본값으로 위장될 수 있다(필드 default).
             # 검증 전에 토큰을 키워 재시도한다(truncation 가드).
             if choice.finish_reason == "length" and cur_max < _STRUCTURED_TOKEN_CEIL:
-                cur_max = min(cur_max * 2, _STRUCTURED_TOKEN_CEIL)
+                new_max = min(cur_max * 2, _STRUCTURED_TOKEN_CEIL)
+                log.warning(
+                    "구조화 출력이 max_tokens 에서 잘려 전체를 재생성합니다 (max_tokens: %d → %d)",
+                    cur_max, new_max,
+                )
+                cur_max = new_max
                 last_err = last_err or LLMError("구조화 출력이 max_tokens 에서 잘림")
                 continue
 

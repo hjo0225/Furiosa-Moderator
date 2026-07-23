@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
 from ..prompts.audience import AUDIENCE_SYSTEM, audience_user
 from .llm_client import LLMError, get_llm
 
@@ -48,6 +49,10 @@ def collect_personas(p) -> str:
             AUDIENCE_SYSTEM,
             audience_user(p.topic, p.target, p.motivation, p.utilization),
             AudienceSpec, max_tokens=256,
+            # 미지정 시 클라이언트 기본(인터뷰용 30s)을 물려받는다 — 이 호출은 가이드
+            # 생성 경로에서 도는 무거운 단발이라 가이드 전용 타임아웃으로 분리한다
+            # (cfa6332 가 본 가이드 구조화 호출은 고쳤지만 이 호출은 놓쳤다).
+            timeout=get_settings().llm_guide_timeout,
         )
     except LLMError as e:
         log.warning("청중 조건 추출 실패, 무동작 (%s)", e)

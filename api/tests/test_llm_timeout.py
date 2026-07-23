@@ -111,7 +111,7 @@ def test_generate_guide_passes_guide_timeout(monkeypatch):
                         lambda pid: Project(id=pid, topic="주제", target="20대"))
     monkeypatch.setattr(pm.store, "get_slot_summaries", lambda pid: {})
     monkeypatch.setattr(pm.store, "save_guide", lambda pid, g: g)
-    monkeypatch.setattr(pm.store, "list_materials", lambda pid: [])   # 자료 없음 → 근거 검색 스킵
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: False)   # 자료 없음 → 근거 검색 스킵
     resp = TestClient(main.app).post("/api/projects/p_1/guide", json={})
     assert resp.status_code == 200
     assert llm.kw["timeout"] == get_settings().llm_guide_timeout

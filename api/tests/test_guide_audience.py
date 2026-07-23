@@ -166,7 +166,7 @@ def _wire_endpoint(monkeypatch):
     )
     monkeypatch.setattr(pm.store, "get_slot_summaries", lambda pid: {})   # 자료 요약 없음
     monkeypatch.setattr(pm.store, "save_guide", lambda pid, g: g)
-    monkeypatch.setattr(pm.store, "list_materials", lambda pid: [])       # 자료 없음 → evidence "" 로 격리
+    monkeypatch.setattr(pm.store, "has_materials", lambda pid: False)     # 자료 없음 → evidence "" 로 격리
     return llm
 
 
