@@ -14,7 +14,8 @@ import {
 } from "recharts";
 import { Mic } from "lucide-react";
 
-import { Button, Card, ErrorState, Skeleton } from "@/components/shared";
+import { Button, Card, ErrorState, PipelineProgress, Skeleton } from "@/components/shared";
+import { usePipeline } from "@/lib/pipeline";
 import { TranscriptView } from "@/components/response-viewer";
 import {
   getDashboard,
@@ -82,7 +83,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[] | null>(null);
-  const [insightBusy, setInsightBusy] = useState(false);
+  const ins = usePipeline<Insight>();
   const [exporting, setExporting] = useState(false);
 
   const load = useCallback(() => {
@@ -203,17 +204,16 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
     return [...withBuckets, ...summaryOnly];
   }, [bucketSections, summaryMap, guide]);
 
+  // 인사이트는 세션 수만큼 LLM 을 돈다 — 서버가 흘려보내는 i/N 진행을 진행 화면으로 받는다.
   async function refreshInsight() {
-    setInsightBusy(true);
     setError(null);
-    try {
-      const next: Insight = await regenerateInsight(projectId);
-      setData((d) => (d ? { ...d, insight: next } : d));
-    } catch {
-      setError("인사이트 생성에 실패했어요.");
-    } finally {
-      setInsightBusy(false);
-    }
+    const next = await ins.run(`/api/projects/${projectId}/insight/stream`, {
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!next) return; // 실패·중단 — 에러는 진행 화면이 보여준다
+    setData((d) => (d ? { ...d, insight: next } : d));
+    ins.detach();
   }
 
   /** 전 세션의 전사를 모아 내보낸다 (C-5). */
@@ -279,6 +279,18 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
     }
   }
 
+  // 분석 중이면 화면 전체를 진행 뷰로 바꾼다(design.md §5).
+  if (ins.state.running || ins.state.error) {
+    return (
+      <PipelineProgress
+        title="응답을 분석하고 있어요"
+        state={ins.state}
+        onDetach={ins.detach}
+        onRetry={refreshInsight}
+      />
+    );
+  }
+
   if (error && !data) {
     return <ErrorState title="결과를 불러오지 못했어요" body={error} onRetry={load} />;
   }
@@ -298,8 +310,8 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lead font-medium">전체 인사이트</h2>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={refreshInsight} disabled={insightBusy}>
-              {insightBusy ? "분석 중…" : insight ? "다시 분석" : "인사이트 생성"}
+            <Button size="sm" variant="secondary" onClick={refreshInsight}>
+              {insight ? "다시 분석" : "인사이트 생성"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
               {exporting ? "준비 중…" : "CSV 내보내기"}

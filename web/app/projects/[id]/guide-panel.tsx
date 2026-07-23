@@ -4,11 +4,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 
-import { Button, buttonVariants, Card, Skeleton } from "@/components/shared";
+import { Button, buttonVariants, Card, PipelineProgress, Skeleton } from "@/components/shared";
+import { usePipeline } from "@/lib/pipeline";
 import {
   ApiError,
   deployProject,
-  generateGuide,
   getGuide,
   saveBlocklist,
   saveGuide,
@@ -50,13 +50,13 @@ export function GuidePanel({
 }) {
   const [guide, setGuide] = useState<InterviewGuide | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<null | "generate" | "save" | "deploy">(null);
+  const [busy, setBusy] = useState<null | "save" | "deploy">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [genElapsed, setGenElapsed] = useState(0);
+  const gen = usePipeline<InterviewGuide>();
 
   // 참가 조건 스크리너(F4.3) — 가이드와 별개로 Project 에 붙는다. 자체 dirty/저장을 둔다.
   const [screener, setScreener] = useState<ScreenerQuestion[]>(project.screener ?? []);
@@ -95,41 +95,26 @@ export function GuidePanel({
     if (project.status === "deployed") setLink(absoluteUrl("", projectId));
   }, [project.status, projectId]);
 
-  // 가이드 생성은 문항·응답 버킷·어휘를 한 번에 만드느라 1분 안팎 걸린다(원인: 구조화
-  // 출력 상한 재조정). 버튼 라벨만으로는 "멈췄나?" 오인을 부르므로 경과초를 보여준다.
-  useEffect(() => {
-    if (busy !== "generate") {
-      setGenElapsed(0);
-      return;
-    }
-    const startedAt = Date.now();
-    setGenElapsed(0);
-    const id = window.setInterval(() => {
-      setGenElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [busy]);
-
   const patch = useCallback((updater: (g: InterviewGuide) => InterviewGuide) => {
     setGuide((g) => (g ? updater(g) : g));
     setDirty(true);
     setMessage(null);
   }, []);
 
+  // 가이드 생성은 문항·응답 버킷·어휘를 한 번에 만드느라 1분 안팎 걸린다. 경과초만으로는
+  // 무엇을 하는 중인지 알 수 없어, 서버가 흘려보내는 실제 단계를 진행 화면으로 받는다.
   async function generate() {
-    setBusy("generate");
     setError(null);
     setMessage(null);
-    try {
-      const g = await generateGuide(projectId, { topic: project.topic, target: project.target });
-      setGuide(g);
-      setDirty(false);
-      setMessage("가이드를 새로 만들었어요. 확인하고 필요하면 고쳐 주세요.");
-    } catch {
-      setError("가이드 생성에 실패했어요. 잠시 후 다시 시도해 주세요.");
-    } finally {
-      setBusy(null);
-    }
+    const g = await gen.run(`/api/projects/${projectId}/guide/stream`, {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: project.topic, target: project.target }),
+    });
+    if (!g) return; // 실패·중단 — 에러는 진행 화면이 이미 보여준다
+    setGuide(g);
+    setDirty(false);
+    setMessage("가이드를 새로 만들었어요. 확인하고 필요하면 고쳐 주세요.");
+    gen.detach();
   }
 
   async function save() {
@@ -390,6 +375,19 @@ export function GuidePanel({
     }
   }
 
+  // 생성 중이면 화면 전체를 진행 뷰로 바꾼다 — 트리거 버튼이 언마운트되므로 더블클릭
+  // 방지가 비활성화가 아니라 화면 전환으로 이뤄진다(design.md §5).
+  if (gen.state.running || gen.state.error) {
+    return (
+      <PipelineProgress
+        title="가이드를 만들고 있어요"
+        state={gen.state}
+        onDetach={gen.detach}
+        onRetry={generate}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -406,15 +404,9 @@ export function GuidePanel({
           아직 인터뷰 가이드가 없어요. 주제를 바탕으로 초안을 만들어 드릴게요.
         </p>
         {error && <p className="mt-3 text-meta text-nogo">{error}</p>}
-        <Button className="mt-5" onClick={generate} disabled={busy === "generate"}>
-          {busy === "generate" ? "만드는 중…" : "가이드 생성하기"}
+        <Button className="mt-5" onClick={generate}>
+          가이드 생성하기
         </Button>
-        {busy === "generate" && (
-          <p className="mt-3 text-meta text-ink-soft">
-            가이드를 만드는 중이에요 · {genElapsed}초 — 질문과 응답 버킷을 한 번에 생성하느라 1분 안팎
-            걸립니다.
-          </p>
-        )}
       </Card>
     );
   }
@@ -442,19 +434,13 @@ export function GuidePanel({
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lead font-medium">질문 {questions.length}개</h3>
-          <Button size="sm" variant="secondary" onClick={generate} disabled={busy === "generate"}>
-            {busy === "generate" ? "생성 중…" : "AI로 다시 생성"}
+          <Button size="sm" variant="secondary" onClick={generate}>
+            AI로 다시 생성
           </Button>
         </div>
         <p className="mt-1 text-meta text-ink-faint">
           진행자가 그대로 읽는 대본이 아니라, 대화에서 반드시 다뤄야 할 주제 목록이에요.
         </p>
-        {busy === "generate" && (
-          <p className="mt-2 text-meta text-ink-soft">
-            가이드를 만드는 중이에요 · {genElapsed}초 — 질문과 응답 버킷을 한 번에 생성하느라 1분 안팎
-            걸립니다.
-          </p>
-        )}
 
         <ul className="mt-4 space-y-3">
           {questions.map((q, i) => (

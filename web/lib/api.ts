@@ -3,6 +3,9 @@
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
+/** 절대 API URL — fetch 를 직접 쓰는 곳(SSE·multipart)에서 BASE 를 다시 짜지 않게. */
+export const apiUrl = (path: string) => `${BASE}${path}`;
+
 // --- 타입 (api/schemas/models.py 와 1:1) -------------------------------------
 
 export type ProjectStatus = "draft" | "deployed" | "closed";
