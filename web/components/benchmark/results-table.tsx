@@ -1,3 +1,4 @@
+import { Card } from "@/components/shared";
 import type { BenchmarkRow } from "@/lib/api";
 
 import { fmtNum, fmtPct } from "./format";
@@ -6,7 +7,7 @@ import { fmtNum, fmtPct } from "./format";
 // overflow-x:auto(design.md §6) — 본문은 절대 가로 스크롤하지 않는다.
 export function ResultsTable({ rows }: { rows: BenchmarkRow[] }) {
   return (
-    <section className="rounded-[10px] bg-white p-6 shadow-card ring-1 ring-silver">
+    <Card as="section" className="p-6">
       <p className="eyebrow">결과 표</p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[640px] border-collapse text-left text-meta">
@@ -55,6 +56,6 @@ export function ResultsTable({ rows }: { rows: BenchmarkRow[] }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </Card>
   );
 }

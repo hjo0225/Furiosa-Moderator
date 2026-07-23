@@ -43,14 +43,14 @@ export function BenchmarkView() {
 
         {!result ? (
           <div className="mt-6 space-y-4" aria-hidden="true">
-            <Skeleton className="h-20 w-full rounded-[10px]" />
-            <Skeleton className="h-40 w-full rounded-[10px]" />
+            <Skeleton className="h-20 w-full rounded-card" />
+            <Skeleton className="h-40 w-full rounded-card" />
             <div className="grid gap-4 md:grid-cols-3">
-              <Skeleton className="h-44 w-full rounded-[10px]" />
-              <Skeleton className="h-44 w-full rounded-[10px]" />
-              <Skeleton className="h-44 w-full rounded-[10px]" />
+              <Skeleton className="h-44 w-full rounded-card" />
+              <Skeleton className="h-44 w-full rounded-card" />
+              <Skeleton className="h-44 w-full rounded-card" />
             </div>
-            <Skeleton className="h-64 w-full rounded-[10px]" />
+            <Skeleton className="h-64 w-full rounded-card" />
           </div>
         ) : (
           <div className="mt-6 space-y-6">
