@@ -10,6 +10,7 @@ M-1(가이드 준수)은 '커버한 문항 id' 를 세션에 누적하는 방식
 """
 from __future__ import annotations
 
+import concurrent.futures as cf
 import logging
 import re
 
@@ -192,11 +193,25 @@ def next_turn(
         # 되물을 직전 질문이 없으면(첫 턴 등) 평소 경로로 흘려보낸다.
 
     # 1) 응답자 발화 — 저장 전에 마스킹한다(PRD 9절). 마스킹된 텍스트로 이후 전부 진행.
+    #    감정 태깅은 질문 생성과 병렬로 돌린다 — 생성 프롬프트는 감정 라벨을 쓰지 않고
+    #    (텍스트만 쓴다), 라벨은 저장·응답에만 필요하다. 직렬이던 시절 태깅(~0.5s)이
+    #    턴 지연에 그대로 더해졌다(2026-07-23 RNGD 실측: 턴 p50 4.5s 중 0.4~0.6s).
+    executor: cf.ThreadPoolExecutor | None = None
+    emotion_future: cf.Future | None = None
+    masked = ""
+    pii_types: list[str] = []
     if text:
         pii_types = scan_pii(text)
         masked = mask_pii(text)
-        emotion, conf = tag_emotion(masked)
-        respondent_turn = store.add_turn(
+        executor = cf.ThreadPoolExecutor(max_workers=1)
+        emotion_future = executor.submit(tag_emotion, masked)
+
+    def _save_respondent() -> Turn | None:
+        """감정 태깅 완료를 기다렸다가 응답자 턴을 저장한다. 생성 성공/실패 양쪽에서 쓴다."""
+        if not text:
+            return None
+        emotion, conf = emotion_future.result()   # tag_emotion 은 실패를 내부에서 흡수한다("중립", 0.0)
+        return store.add_turn(
             project_id,
             sid,
             Turn(
@@ -208,11 +223,14 @@ def next_turn(
             ),
         )
 
-    # 2) 대화이력 — 방금 저장한 턴까지 포함해 다시 읽는다.
+    # 2) 대화이력 — 아직 저장 전이므로 방금 발화를 메모리에서 이어붙인다.
+    #    (프롬프트는 role·text·is_probe 만 읽는다. asked 는 진행자 턴 수라 응답자 턴과 무관.)
     history = store.list_turns(project_id, sid)
+    if text:
+        history = history + [Turn(role="respondent", text=masked, pii_types=pii_types)]
     asked = sum(1 for t in history if t.role == "moderator")
 
-    # 3) 다음 발화 생성
+    # 3) 다음 발화 생성 — 감정 태깅과 동시에 진행된다.
     try:
         out, _ = get_llm().structured(
             interview_moderator_system(lang),
@@ -222,7 +240,13 @@ def next_turn(
         )
     except LLMError as e:
         log.exception("모더레이터 생성 실패: %s", e)
+        _save_respondent()   # 구버전과 동일하게, 생성이 실패해도 응답자 발화는 전사에 남긴다
         raise
+    finally:
+        if executor:
+            executor.shutdown(wait=False)
+
+    respondent_turn = _save_respondent()
 
     message = (out.message or "").strip()
     done = bool(out.done)
