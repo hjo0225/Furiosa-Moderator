@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import time
 
-from ...config import get_settings
 from ...prompts.insight import BUCKET_CLASSIFY_SYSTEM, bucket_classify_user
 from ...schemas.models import BucketAssignment
 from ...services import store
@@ -21,11 +20,17 @@ from ..state import InterviewState
 
 log = logging.getLogger(__name__)
 
-# 라운드2: 흔한 케이스가 첫 생성에서 성공하도록 처음부터 넉넉히 예산을 준다(1500→3000 이었던
-# 재시도 사다리의 낭비된 1차 시도를 없앤다). 동시에 3000 토큰 디코드(~48s@62tok/s)가
-# 인터뷰 턴 기본 llm_timeout(30s)에 걸려 3회 전송 재시도로 번지지 않도록 타임아웃도
-# 별도로 넉넉히 준다 — 토큰만 늘리고 타임아웃을 그대로 두면 최악의 조합이 된다.
-_REFLECT_MAX_TOKENS = 3000
+# 원장 갱신은 **best-effort 부수 작업**이다(실패해도 아래에서 건너뛴다). 그런데 응답 경로
+# 위에 있어서, 느린 실패는 응답자가 그대로 기다린다. 상한을 올리는 시도는 프로덕션에서 두 번
+# 다 벽만 뒤로 밀었다 — 실측:
+#   cap 400  → 400·800·1600 재생성 후 실패        = 턴 ~50s
+#   cap 1500 → 3000 으로 승급, 30s 타임아웃 3회   = 턴 123s
+#   cap 3000 + timeout 180s → 4096 승급, 깨진 JSON = 턴 **226s** (221.6s 소요 후 실패)
+# 결론: ReflectOut 은 블로킹 호출로 감당할 크기가 아니다. 상한을 키우지 말고 **빨리 실패**시켜
+# 응답자가 붙잡히는 시간을 묶는다. 원장을 놓치면 다음 턴에 회복된다.
+# 진짜 해법은 reflect 를 응답 반환 뒤로 빼는 구조 변경 — 체크포인트 계약을 건드리므로 별건.
+_REFLECT_MAX_TOKENS = 1200
+_REFLECT_TIMEOUT_S = 20.0
 
 
 def _catchall_id(buckets: list[dict]) -> str:
@@ -47,7 +52,7 @@ def reflect_ledger(state: InterviewState) -> dict:
         out, _ = get_llm().structured(
             REFLECT_SYSTEM, reflect_user(state["guide"], qid, utterance),
             ReflectOut, max_tokens=_REFLECT_MAX_TOKENS,
-            timeout=get_settings().llm_guide_timeout,
+            timeout=_REFLECT_TIMEOUT_S,
         )
     except LLMError as e:
         elapsed = time.monotonic() - started
