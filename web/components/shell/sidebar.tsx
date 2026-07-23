@@ -48,7 +48,7 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded text-charcoal hover:bg-blush"
+          className="flex h-11 w-11 items-center justify-center rounded text-charcoal hover:bg-blush"
           aria-label="메뉴 열기"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
@@ -78,7 +78,7 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
           <button
             type="button"
             onClick={() => setMobileOpen(false)}
-            className="flex h-8 w-8 items-center justify-center rounded text-charcoal hover:bg-blush md:hidden"
+            className="flex h-11 w-11 items-center justify-center rounded text-charcoal hover:bg-blush md:hidden"
             aria-label="메뉴 닫기"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -103,6 +103,7 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
               <Link
                 key={key}
                 href={href}
+                onClick={() => setMobileOpen(false)}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-base font-medium transition-colors",
@@ -122,6 +123,7 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
         <div className="px-3 pb-4">
           <Link
             href="/projects/new"
+            onClick={() => setMobileOpen(false)}
             className="flex items-center justify-center gap-1.5 rounded-lg bg-red px-3 py-2.5 text-base font-medium text-white transition-colors hover:bg-red-dark active:translate-y-px"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -132,7 +134,7 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
         {/* 푸터 — 계정 메뉴가 아니다. 무인증 MVP 안내(design.md §5). */}
         <div className="flex items-center gap-2 border-t border-silver px-5 py-4 text-meta text-grey">
           <LinkIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span>로그인 없이 바로 · 링크만 공유</span>
+          <span>로그인 없이, 링크만 공유</span>
         </div>
       </aside>
     </>
