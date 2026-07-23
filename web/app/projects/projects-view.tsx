@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { BackLink, buttonVariants, Container } from "@/components/shared";
+import { buttonVariants, Container } from "@/components/shared";
 import { listProjects, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +36,6 @@ export function ProjectsView() {
   return (
     <main className="py-10 md:py-16">
       <Container className="max-w-4xl">
-        <BackLink href="/">mindlens</BackLink>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-title">내 프로젝트</h1>

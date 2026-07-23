@@ -3,7 +3,7 @@
 // 프로젝트 상세 — 가이드 검토·수정(C-2) + 배포(C-3) | 결과 대시보드(C-4) + 내보내기(C-5).
 import { useCallback, useEffect, useState } from "react";
 
-import { BackLink, Container } from "@/components/shared";
+import { Container } from "@/components/shared";
 import { getProject, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -40,8 +40,6 @@ export function ProjectView({ projectId }: { projectId: string }) {
   return (
     <main className="py-10 md:py-16">
       <Container className="max-w-5xl">
-        <BackLink href="/projects">내 프로젝트</BackLink>
-
         {error && <p className="mt-4 text-meta text-nogo">{error}</p>}
 
         {!project ? (

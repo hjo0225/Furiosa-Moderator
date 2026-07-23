@@ -1,8 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0B0C0E"/>
+  <!-- Furiosa 리컬러 — 검정 그라운드 폐기(design.md §0 "블랙 드라마 배제"), 흰 바탕 + red 마크. -->
+  <rect width="64" height="64" rx="14" fill="#FFFFFF"/>
   <!-- lens -->
-  <circle cx="32" cy="30" r="14" fill="none" stroke="#4DA3FF" stroke-width="4"/>
+  <circle cx="32" cy="30" r="14" fill="none" stroke="#E21500" stroke-width="4"/>
   <!-- sound waves through the lens -->
-  <path d="M26 30v-5M32 30v-9M38 30v-5" stroke="#4DA3FF" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M42 41l8 9" stroke="#4DA3FF" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M26 30v-5M32 30v-9M38 30v-5" stroke="#E21500" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M42 41l8 9" stroke="#D4D4D4" stroke-width="4.5" stroke-linecap="round"/>
 </svg>
