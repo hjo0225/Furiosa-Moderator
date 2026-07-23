@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "mindlens — AI 음성 인터뷰",
+  title: "Mindlens",
   description: "주제만 정하면 AI 진행자가 응답자와 1:1 음성 인터뷰를 진행하고, 전사·요약·인사이트까지 정리해 드립니다.",
 };
 
