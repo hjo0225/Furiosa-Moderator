@@ -21,7 +21,8 @@ import type { BenchmarkResult } from "@/lib/api";
 const POWER_COLOR = "#E21500";
 const SESSIONS_COLOR = "#D4D4D4";
 
-// 24h 전력 시계열 — 계측 스펙 §7 "24h 전력 시계열": 상단 벽면 W, 하단 동시 세션, idle 바닥선.
+// 전력 시계열 — 계측 스펙 §7 "차트 2": 상단 카드 W, 하단 동시 세션, idle 바닥선.
+// 벽면 PDU 는 범위 밖(§9)이라 카드 센서 값을 쓴다 — 하한값이라는 표시를 화면에 남긴다.
 // 데이터가 없을 때도 "깨진 화면"이 아니라 의도된 플레이스홀더로 보이게 한다(브리프 요구사항).
 export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
   const hasData = result.power_timeseries.length > 1;
@@ -34,7 +35,7 @@ export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
           <Activity className="h-5 w-5 text-grey" aria-hidden="true" />
           <p className="text-meta text-charcoal">24h 계측 대기 중</p>
           <p className="max-w-sm text-2xs text-grey">
-            PDU·furiosa-metrics-exporter 연결 후 벽면 W·동시 세션·idle 바닥선이 채워집니다. 가속
+            furiosa-smi·metrics-exporter 연결 후 카드 W·동시 세션·idle 바닥선이 채워집니다. 가속
             리플레이는 하지 않습니다(계측 스펙 §8) — 유휴 시간이 이 지표의 본질입니다.
           </p>
         </div>
@@ -83,7 +84,7 @@ export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
               <Line
                 yAxisId="power"
                 type="monotone"
-                dataKey="wall_power_w"
+                dataKey="card_power_w"
                 stroke={POWER_COLOR}
                 strokeWidth={2}
                 dot={false}
@@ -94,7 +95,7 @@ export function PowerTimeseriesChart({ result }: { result: BenchmarkResult }) {
           <div className="mt-1 flex items-center justify-between text-2xs text-grey">
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-3 rounded-full" style={{ background: POWER_COLOR }} />
-              벽면 W
+              카드 W
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-3 rounded-full" style={{ background: SESSIONS_COLOR }} />
