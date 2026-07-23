@@ -29,14 +29,14 @@ export function ModeratorAvatar({
     >
       {/* 소프트 링 — 오브 밖으로 은은하게 번지는 테두리(design.md §5: 압도하지 않게) */}
       <span className="absolute inset-0 rounded-full ring-2 ring-red/20" />
-      {/* 오브 본체 — peach→red 라디얼(design.md §5 값 그대로) */}
+      {/* 오브 본체 — peach→red 라디얼. peach 스톱은 Furiosa peach 토큰(design.md, #FEC2A0) */}
       <span
         className={cn(
           "absolute inset-[3px] rounded-full",
           speaking && "animate-moderator-pulse",
         )}
         style={{
-          background: "radial-gradient(circle at 38% 32%, #ffb59c, #E21500 90%)",
+          background: "radial-gradient(circle at 38% 32%, #FEC2A0, #E21500 90%)",
           boxShadow: "0 2px 10px rgba(226, 21, 0, 0.22)",
         }}
       />

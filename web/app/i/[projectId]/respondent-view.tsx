@@ -114,7 +114,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
           </p>
         ) : project.status === "closed" ? (
           <Card className="p-8 text-center">
-            <p aria-hidden="true">
+            <p>
               <HeartHandshake className="inline-block h-7 w-7 text-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-3 text-lead font-medium">마감된 인터뷰예요</h1>
@@ -255,7 +255,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
         ) : stage === "disqualified" ? (
           /* F4.3 부적격 — 정중한 종료. 세션을 만들지 않았으므로 집계 모수에 들어가지 않는다. */
           <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p aria-hidden="true">
+            <p>
               <HeartHandshake className="inline-block h-8 w-8 text-ink-soft" aria-hidden="true" />
             </p>
             <h1 className="mt-4 text-title">감사합니다</h1>
@@ -280,7 +280,7 @@ export function RespondentView({ projectId }: { projectId: string }) {
         ) : (
           /* R-4 완료 */
           <section className="mx-auto max-w-md rounded-2xl bg-surface p-8 text-center shadow-card ring-1 ring-line sm:p-10">
-            <p aria-hidden="true">
+            <p>
               <CheckCircle2 className="inline-block h-8 w-8 text-go" aria-hidden="true" />
             </p>
             <h1 className="mt-4 text-title">제출됐어요</h1>
