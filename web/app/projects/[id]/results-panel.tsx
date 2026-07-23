@@ -295,6 +295,9 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   // 응답 4건짜리 조사에서 같은 말이 4번 반복돼 화면을 채우던 문제.
   const n = insight?.session_count ?? 0;
   const showCharts = n >= SMALL_N;
+  // 탭·헤더의 '응답 N건'은 **제출 완료만** 센다. sessions 에는 미제출·이탈까지 들어 있어서
+  // 그대로 쓰면 탭은 10건, 발견은 '4명 중'이라 같은 화면이 서로 다른 모수를 말하게 된다.
+  const completedCount = sessions.filter((s) => s.status === "completed").length;
   const findings = useMemo(
     () =>
       (insight?.themes ?? []).map((th) => {
@@ -455,7 +458,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
             )}
           >
             {label}
-            {key === "responses" && sessions.length > 0 ? ` ${sessions.length}건` : ""}
+            {key === "responses" && completedCount > 0 ? ` ${completedCount}건` : ""}
           </button>
         ))}
       </div>
@@ -596,7 +599,14 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
       {view === "responses" && (
         <section>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lead font-medium">응답 {sessions.length}건</h2>
+            <h2 className="text-lead font-medium">
+              응답 {completedCount}건
+              {sessions.length > completedCount && (
+                <span className="ml-2 font-mono text-2xs font-normal text-ink-faint">
+                  미제출·이탈 {sessions.length - completedCount}건 포함해 표시
+                </span>
+              )}
+            </h2>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
                 {exporting ? "준비 중…" : "CSV 내보내기"}
