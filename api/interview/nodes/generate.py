@@ -5,7 +5,6 @@ from ...services import store
 from ...services.llm_client import get_llm
 from ..prompts import generate_user, interview_moderator_system, opening_user
 from ..state import InterviewState
-from ..tools import brief
 from ..tools.playbook import playbook
 
 
@@ -17,9 +16,6 @@ def generate(state: InterviewState) -> dict:
         msg, _ = get_llm().text(interview_moderator_system(lang), prompt, max_tokens=300)
         return {"draft": (msg or "").strip(), "question_id": qid, "is_probe": False, "action": "advance"}
 
-    # 도구 (T0 폴백: 발동은 구조화 출력·결정론 규칙이 정한다 — 자율 tool choice 없음)
-    terms = state.get("analysis", {}).get("unknown_terms", [])
-    notes = brief.lookup(state["project_id"], terms) if terms else []
     # 지식팩 금칙어(F1.5) — 진행자가 먼저 꺼내면 안 되는 주제. 프로젝트가 없거나 비면 제약 없음.
     proj = store.get_project(state["project_id"])
     blocklist = (proj.blocklist if proj else None) or []
@@ -29,7 +25,6 @@ def generate(state: InterviewState) -> dict:
             state["action"], state.get("question_id", ""), state.get("probe_type", ""),
             state.get("analysis", {}).get("contradiction", ""),
             state["guide"], state.get("messages", []), state.get("ledger", {}),
-            brief_notes=notes,
             technique=playbook(state["action"], state.get("probe_type", "")),
             blocklist=blocklist,
         ),

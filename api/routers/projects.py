@@ -176,6 +176,43 @@ def _normalize_buckets(q: GuideQuestion) -> None:
             )
 
 
+def _collect_evidence(pid: str, p) -> str:
+    """가이드 생성용 RAG 근거 — 슬롯별 1쿼리로 검색해 dedup·cap(9)·라인 포맷.
+
+    research.py 의 슬롯별 폴백 문구를 재사용한다. RAG 실패가 가이드 생성을 죽이면
+    안 되므로(레포 관례) 각 검색을 try/except 로 감싸 실패 슬롯은 건너뛴다.
+    search_chunks 는 순환 임포트 회피로 로컬 임포트.
+    """
+    if not store.list_materials(pid):   # 자료 없으면 임베딩 호출 없이 빠진다(불필요 네트워크 방지)
+        return ""
+    from ..briefing.pipeline import search_chunks
+
+    queries: list[tuple[str, str]] = [
+        ("현상", f"{p.topic} {p.target}".strip()),
+        ("원인", f"{p.topic} 이유 원인"),
+    ]
+    if p.utilization.strip():
+        queries.append(("활용", f"{p.utilization} 사례".strip()))
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for slot, q in queries:
+        if not q:
+            continue
+        try:
+            hits = search_chunks(pid, q, k=3, angle=slot)
+        except Exception:  # noqa: BLE001 — RAG 장애가 가이드 생성을 막아선 안 된다
+            log.warning("evidence 검색 실패 (project=%s slot=%s)", pid, slot, exc_info=True)
+            hits = []
+        for h in hits:
+            text = h["text"]
+            if text in seen:
+                continue
+            seen.add(text)
+            lines.append(f"- {text} (출처: {h['source']})")
+    return "\n".join(lines[:9])
+
+
 @router.post("/{pid}/guide", response_model=InterviewGuide)
 def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     """C-2 가이드 자동 생성."""
@@ -183,10 +220,11 @@ def generate_guide(pid: str, body: GuideGenerateIn) -> InterviewGuide:
     topic = body.topic.strip() or p.topic
     target = body.target.strip() or p.target
     material = compose_guide_material(store.get_slot_summaries(pid))
+    evidence = _collect_evidence(pid, p)
     try:
         guide, _ = get_llm().structured(
             GUIDE_SYSTEM,
-            guide_user(topic, target, material, p.motivation, p.utilization),
+            guide_user(topic, target, material, p.motivation, p.utilization, evidence=evidence),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
             max_tokens=2000,
         )
