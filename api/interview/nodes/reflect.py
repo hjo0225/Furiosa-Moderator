@@ -53,6 +53,9 @@ def reflect_ledger(state: InterviewState) -> dict:
             REFLECT_SYSTEM, reflect_user(state["guide"], qid, utterance),
             ReflectOut, max_tokens=_REFLECT_MAX_TOKENS,
             timeout=_REFLECT_TIMEOUT_S,
+            # 자가교정 사다리(기본 3회)를 끊는다 — best-effort 부수 작업이라 재시도 가치보다
+            # 응답자가 기다리는 비용이 크다. 실측: 3회 시도가 최악 ~105s 를 만든다.
+            max_attempts=1,
         )
     except LLMError as e:
         elapsed = time.monotonic() - started

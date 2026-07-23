@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .routers import projects, public, speech
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# force=True — 다른 라이브러리(alembic 등)가 먼저 루트 핸들러를 잡아도 앱 설정이 이긴다.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,
+)
 log = logging.getLogger("mindlens")
 
 app = FastAPI(title="mindlens API", version="0.1.0")
