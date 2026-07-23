@@ -22,6 +22,7 @@ from ..schemas.models import (
     Material,
     Project,
     QuestionSummary,
+    ResponseBucket,
     ScreenerQuestion,
     Session,
     ThemeInsight,
@@ -554,15 +555,17 @@ def save_insight(pid: str, i: Insight) -> Insight:
         r = s.get(InsightRow, pid)
         themes = [t.model_dump() for t in i.themes]
         summaries = [qs.model_dump() for qs in i.question_summaries]
+        codebooks = {qid: [b.model_dump() for b in bs] for qid, bs in i.codebooks.items()}
         if r:
             r.overall, r.themes, r.sentiment = i.overall, themes, i.sentiment
             r.bucket_distribution = i.bucket_distribution
+            r.codebooks = codebooks
             r.question_summaries = summaries
             r.session_count, r.generated_at = i.session_count, i.generated_at
         else:
             s.add(InsightRow(
                 project_id=pid, overall=i.overall, themes=themes, sentiment=i.sentiment,
-                bucket_distribution=i.bucket_distribution,
+                bucket_distribution=i.bucket_distribution, codebooks=codebooks,
                 question_summaries=summaries,
                 session_count=i.session_count, generated_at=i.generated_at,
             ))
@@ -580,6 +583,10 @@ def get_insight(pid: str) -> Insight | None:
             themes=[ThemeInsight(**t) for t in (r.themes or [])],
             sentiment=dict(r.sentiment or {}),
             bucket_distribution=dict(r.bucket_distribution or {}),
+            codebooks={
+                qid: [ResponseBucket(**b) for b in bs]
+                for qid, bs in (getattr(r, "codebooks", None) or {}).items()
+            },
             question_summaries=[
                 QuestionSummary(**q) for q in (r.question_summaries or [])
             ],

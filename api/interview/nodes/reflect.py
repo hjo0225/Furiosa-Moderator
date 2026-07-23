@@ -9,8 +9,6 @@ from __future__ import annotations
 import logging
 import time
 
-from ...prompts.insight import BUCKET_CLASSIFY_SYSTEM, bucket_classify_user
-from ...schemas.models import BucketAssignment
 from ...services import store
 from ...services.llm_client import LLMError, get_llm
 from ...services.moderator import tag_emotion
@@ -38,14 +36,6 @@ log = logging.getLogger(__name__)
 # 작업이라 실패해도 다음 턴에 회복되므로, 재시도로 지연을 사는 것보다 빨리 포기하는 쪽이 낫다.
 _REFLECT_MAX_TOKENS = 1200
 _REFLECT_TIMEOUT_S = 20.0
-
-
-def _catchall_id(buckets: list[dict]) -> str:
-    """캐치올 버킷 id — 없으면 마지막 버킷으로 폴백(_normalize_buckets 가 보통 캐치올을 보장)."""
-    for b in buckets:
-        if b.get("is_catchall"):
-            return b.get("id", "")
-    return buckets[-1].get("id", "") if buckets else ""
 
 
 def reflect_ledger(state: InterviewState) -> dict:
@@ -95,41 +85,6 @@ def reflect_emotion(state: InterviewState) -> dict:
     store.update_turn(state["project_id"], state["session_id"], turn_id, patch)
     return {}
 
-
-def reflect_bucket(state: InterviewState) -> dict:
-    """응답 버킷 분류 이사 (F6.1) — reflect_emotion 과 같은 슬로우패스.
-
-    이번 답변을 그 문항의 코드북(response_buckets) 중 하나로 분류해 턴에 남긴다.
-    LLM 은 '어느 버킷'만 고른다 — 버킷별 N(분포)은 DB 실측(store.bucket_distribution)이 센다(계약 1).
-    실패해도 인터뷰를 막지 않는다(best-effort): 버킷 없는 구가이드·LLMError 는 조용히 건너뛴다.
-    """
-    qid = state.get("answered_qid", "")
-    utterance = state.get("utterance", "")
-    turn_id = state.get("resp_turn_id", "")
-    if not qid or not utterance or not turn_id:
-        return {}
-    questions = {q["id"]: q for q in state.get("guide", {}).get("questions", []) if q.get("id")}
-    q = questions.get(qid)
-    if not q:
-        return {}
-    buckets = q.get("response_buckets") or []
-    if not buckets:
-        return {}   # 구가이드 — 코드북이 없으면 분류 자체를 건너뛴다
-    bucket_ids = {b.get("id") for b in buckets if b.get("id")}
-    try:
-        out, _ = get_llm().structured(
-            BUCKET_CLASSIFY_SYSTEM,
-            bucket_classify_user(q.get("text", ""), q.get("goal", ""), buckets, utterance),
-            BucketAssignment, max_tokens=200,
-        )
-    except LLMError as e:
-        log.warning("버킷 분류 실패 — 이번 턴은 건너뜀: %s", e)
-        return {}
-    # 환각·미지 id 는 캐치올로 폴백(F2.3.3) — 분류 실패로 턴을 비워두지 않는다
-    bucket_id = out.bucket_id if out.bucket_id in bucket_ids else _catchall_id(buckets)
-    store.update_turn(state["project_id"], state["session_id"], turn_id, {
-        "bucket_id": bucket_id,
-        "bucket_confidence": max(0.0, min(1.0, out.confidence)),
-        "bucket_evidence": out.evidence,
-    })
-    return {}
+# 응답 버킷 분류(reflect_bucket)는 인터뷰 루프에서 뺐다(스펙 C). 코드북이 측정 전에 없으므로
+# 인터뷰 중엔 분류할 대상이 없다 — 분류는 인사이트 생성 시 전사 전체를 놓고 일괄로 한다
+# (api/routers/projects.py run_insight 의 codebook 단계).

@@ -114,6 +114,48 @@ def is_leading_question(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+# 예/아니오로 닫히는 어미 + 랭킹·빈도 설문 문형(스펙 C — 정성이 아니라 설문이 되는 신호).
+_CLOSED_ENDING = re.compile(r"(있|없|하)나요\s*[?？]?\s*$|(인|맞|같)나요\s*[?？]?\s*$|(나|니|까)\s*[?？]\s*$")
+_SURVEY_FRAME = re.compile(r"가장\s*(큰|먼저|중요|주요)|몇\s*(번|회|개)|얼마나\s*자주|순위|우선순위")
+
+
+def is_closed_or_survey(text: str) -> tuple[bool, str]:
+    """정성 인터뷰에 안 맞는 설문형 질문 플래그 (스펙 C). 로그·리포트 전용."""
+    q = (text or "").strip()
+    if not q:
+        return False, ""
+    if _SURVEY_FRAME.search(q):
+        return True, "랭킹·빈도 설문 문형"
+    if _CLOSED_ENDING.search(q):
+        return True, "예/아니오로 닫히는 질문"
+    return False, ""
+
+
+def repeated_question_pairs(questions: list) -> list[tuple[str, str]]:
+    """같은 격자를 표현만 바꿔 반복하는 문항 쌍 (스펙 C).
+
+    text+goal 토큰집합 Jaccard 가 0.35 이상이면 동어반복으로 본다 — 라이브에서 '먼저 확인'·
+    '영향'·'매력' 이 같은 선택지 7개를 6번 물었던 사고를 검출한다. 어절 단위 토큰이라 조사
+    차이로 겹침이 낮게 나와(격자 반복이 실측 0.41, 무관 문항 0.05) 임계값을 낮게 잡는다.
+    """
+    items: list[tuple[str, set]] = []
+    for q in questions or []:
+        qid = str(_get(q, "id", "") or "")
+        toks = set(_tokenize(str(_get(q, "text", "") or "") + " " + str(_get(q, "goal", "") or "")))
+        if toks:
+            items.append((qid, toks))
+    pairs: list[tuple[str, str]] = []
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            a, ta = items[i]
+            b, tb = items[j]
+            inter = len(ta & tb)
+            union = len(ta | tb) or 1
+            if inter / union >= 0.35:
+                pairs.append((a, b))
+    return pairs
+
+
 # --- F2.3.1 버킷 MECE 겹침 경고 ---------------------------------------------
 def _norm_label(s: str) -> str:
     """라벨 정규화 — 공백 제거 + 소문자화. '배송 지연'과 '배송지연'을 같게 본다."""
@@ -193,19 +235,27 @@ def guide_quality_report(guide) -> dict:
     """
     questions = _get(guide, "questions", []) or []
     leading: list[str] = []
+    closed: list[str] = []
     bucket_warnings: dict[str, list[str]] = {}
     for q in questions:
         qid = str(_get(q, "id", "") or "")
-        is_lead, _reason = is_leading_question(str(_get(q, "text", "") or ""))
-        if is_lead:
+        text = str(_get(q, "text", "") or "")
+        if is_leading_question(text)[0]:
             leading.append(qid)
+        if is_closed_or_survey(text)[0]:      # 스펙 C — 설문형 질문
+            closed.append(qid)
         warns = bucket_overlap_warnings(_get(q, "response_buckets", []) or [])
         if warns:
             bucket_warnings[qid] = warns
+    repeated = repeated_question_pairs(questions)
     return {
         "leading": leading,
+        "closed": closed,
+        "repeated": repeated,
         "bucket_warnings": bucket_warnings,
         "n_questions": len(questions),
         "n_leading": len(leading),
+        "n_closed": len(closed),
+        "n_repeated": len(repeated),
         "mece_ok": not bucket_warnings,
     }

@@ -228,31 +228,35 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
     [insight],
   );
 
-  // 문항별 응답 버킷 분포(F6.4) — DB 실측 카운트를 가이드 버킷 라벨과 합친다.
-  // 아직 분류된 응답이 없는 문항(total 0)은 감춘다.
+  // 문항별 응답 버킷 분포(F6.4) — DB 실측 카운트를 코드북 라벨과 합친다.
+  // 라벨은 insight.codebooks(전사에서 귀납 생성)에서 먼저 찾고, 없으면(구 데이터)
+  // 가이드의 response_buckets 로 폴백한다(스펙 C). 분류된 응답이 없는 문항(total 0)은 감춘다.
   const bucketSections = useMemo(() => {
     const dist = insight?.bucket_distribution ?? {};
-    return (guide?.questions ?? [])
-      .filter((q) => q.response_buckets.length > 0)
-      .map((q) => {
-        const counts = dist[q.id] ?? {};
-        const total = q.response_buckets.reduce((sum, b) => sum + (counts[b.id] ?? 0), 0);
+    const codebooks = insight?.codebooks ?? {};
+    const guideById = new Map((guide?.questions ?? []).map((q) => [q.id, q]));
+    // 코드북이 있으면 그 질문 id 집합을, 없으면 가이드 버킷이 있는 질문을 대상으로.
+    const qids = new Set<string>([
+      ...Object.keys(codebooks),
+      ...(guide?.questions ?? []).filter((q) => q.response_buckets.length > 0).map((q) => q.id),
+    ]);
+    return [...qids]
+      .map((qid) => {
+        const buckets = codebooks[qid]?.length ? codebooks[qid] : guideById.get(qid)?.response_buckets ?? [];
+        if (buckets.length === 0) return null;
+        const counts = dist[qid] ?? {};
+        const total = buckets.reduce((sum, b) => sum + (counts[b.id] ?? 0), 0);
         return {
-          id: q.id,
-          text: q.text,
+          id: qid,
+          text: guideById.get(qid)?.text ?? qid,
           total,
-          bars: q.response_buckets.map((b) => {
+          bars: buckets.map((b) => {
             const count = counts[b.id] ?? 0;
-            return {
-              id: b.id,
-              label: b.label,
-              count,
-              pct: total ? Math.round((count / total) * 100) : 0,
-            };
+            return { id: b.id, label: b.label, count, pct: total ? Math.round((count / total) * 100) : 0 };
           }),
         };
       })
-      .filter((sec) => sec.total > 0);
+      .filter((sec): sec is NonNullable<typeof sec> => sec !== null && sec.total > 0);
   }, [guide, insight]);
 
   // 문항별 AI 요약(F6.3) — question_id → {headline, summary}.
@@ -442,8 +446,13 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* 하위 탭 — URL 이 소유한다(?view=). 요약·주제·전사를 한 페이지에 세로로 쌓지 않는다. */}
-      <div className="flex gap-1 border-b border-line" role="tablist">
+      {/* 하위 탭 — URL 이 소유한다(?view=). 상위 탭(밑줄)과 층을 구분하려고 **알약 토글**로 낸다:
+          같은 밑줄 스타일을 두 번 쓰면 위계가 안 읽힌다. 회색 트랙 안에서 활성만 red 배경. */}
+      <div
+        className="inline-flex gap-1 rounded-lg bg-surface p-1 ring-1 ring-line"
+        role="tablist"
+        aria-label="결과 보기"
+      >
         {VIEWS.map(([key, label]) => (
           <button
             key={key}
@@ -451,10 +460,10 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
             aria-selected={view === key}
             onClick={() => setView(key)}
             className={cn(
-              "-mb-px border-b-2 px-3.5 py-2 text-meta font-medium transition-colors",
+              "rounded-md px-3.5 py-1.5 text-meta font-medium transition-colors",
               view === key
-                ? "border-red text-red"
-                : "border-transparent text-ink-faint hover:text-ink-soft",
+                ? "bg-accent-solid text-accent-on shadow-sm"
+                : "text-ink-soft hover:bg-bg hover:text-ink",
             )}
           >
             {label}

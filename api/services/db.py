@@ -143,6 +143,9 @@ class InsightRow(Base):
     sentiment: Mapped[dict] = mapped_column(JSONB, default=dict)
     # 문항별 버킷 분포(F6.4) — sentiment 와 같은 DB 실측을 인사이트 행에 함께 보존한다.
     bucket_distribution: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # 문항별 코드북(스펙 C) — {question_id: [ResponseBucket]}. 전사에서 귀납 생성한 라벨을
+    # 분포와 같은 행에 보존한다. 결과 화면이 라벨을 여기서 먼저 찾는다(가이드 폴백).
+    codebooks: Mapped[dict] = mapped_column(JSONB, default=dict)
     # 문항별 AI 요약(F6.3) — LLM 해석 출력. 버킷 분포와 같은 행에 함께 보존해 재방문 때도 유지.
     question_summaries: Mapped[list] = mapped_column(JSONB, default=list)
     session_count: Mapped[int] = mapped_column(Integer, default=0)

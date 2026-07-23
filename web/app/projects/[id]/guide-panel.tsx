@@ -224,35 +224,10 @@ export function GuidePanel({
     });
   }
 
-  function updateBucket(qi: number, bi: number, field: "label" | "definition", value: string) {
-    mapQuestionAt(qi, (q) => ({
-      ...q,
-      response_buckets: q.response_buckets.map((b, j) => (j === bi ? { ...b, [field]: value } : b)),
-    }));
-  }
-  function removeBucket(qi: number, bi: number) {
-    mapQuestionAt(qi, (q) => ({
-      ...q,
-      response_buckets: q.response_buckets.filter((_, j) => j !== bi),
-    }));
-  }
-  function addBucket(qi: number) {
-    mapQuestionAt(qi, (q) => ({
-      ...q,
-      response_buckets: [
-        ...q.response_buckets,
-        {
-          id: `${q.id}_b${q.response_buckets.length + 1}`,
-          label: "",
-          definition: "",
-          is_catchall: false,
-          is_negative_case: false,
-        } satisfies ResponseBucket,
-      ],
-    }));
-  }
+  // 응답 버킷 편집 핸들러는 걷어냈다(스펙 C) — 코드북은 인터뷰 뒤 전사에서 자동 생성된다.
+  // response_buckets 필드는 모델에 남아 있지만(구 데이터 호환) 새 가이드에선 항상 빈 배열이다.
 
-  /** 질문 이동은 **같은 주제 안에서만** 한다 — 주제를 넘나들면 버킷이 엉뚱한 주제에 붙는다. */
+  /** 질문 이동은 **같은 주제 안에서만** 한다 — 주제를 넘나들면 순번이 엉킨다. */
   function moveQuestion(ti: number, qi: number, dir: -1 | 1) {
     patch((g) => {
       const t = g.topics[ti];
@@ -582,47 +557,9 @@ export function GuidePanel({
                     placeholder="이 질문으로 알아내려는 것 (선택)"
                     className={cn(inputCls, "text-meta")}
                   />
-                  <div className="mt-2 rounded-lg bg-surface p-3 ring-1 ring-line">
-                    <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-faint">
-                      응답 버킷 · {q.response_buckets.length}개
-                    </p>
-                    <ul className="space-y-1.5">
-                      {q.response_buckets.map((b, bi) => (
-                        <li key={b.id || bi} className="flex items-start gap-2">
-                          <span
-                            className={cn(
-                              "mt-2 h-2 w-2 shrink-0 rounded-full",
-                              b.is_catchall ? "bg-ink-faint" : b.is_negative_case ? "bg-pivot" : "bg-accent-solid",
-                            )}
-                            aria-hidden
-                          />
-                          <input
-                            value={b.label}
-                            onChange={(e) => updateBucket(i, bi, "label", e.target.value)}
-                            placeholder="버킷 이름"
-                            className={cn(inputCls, "text-meta min-w-0 flex-1")}
-                          />
-                          <input
-                            value={b.definition}
-                            onChange={(e) => updateBucket(i, bi, "definition", e.target.value)}
-                            placeholder="1문장 정의"
-                            className={cn(inputCls, "text-meta min-w-0 flex-[2]")}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeBucket(i, bi)}
-                            aria-label="버킷 삭제"
-                            className="mt-1 rounded px-2 py-1 text-ink-faint hover:bg-nogo/10 hover:text-nogo"
-                          >
-                            <X className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button size="sm" variant="ghost" className="mt-1.5" onClick={() => addBucket(i)}>
-                      + 버킷 추가
-                    </Button>
-                  </div>
+                  {/* 응답 버킷(코드북)은 여기서 만들지 않는다(스펙 C). 측정 전에 보기를 정하면
+                      질문이 그 보기에 맞춰 좁아진다 — 코드북은 인터뷰가 끝난 뒤 실제 전사에서
+                      자동으로 만들어져 결과의 '주제별' 탭에 나온다. */}
 
                   {/* 자극물(선택) — 이 문항을 다룰 때 응답자 화면에 함께 띄울 이미지/영상 */}
                   <div className="mt-2 rounded-lg bg-surface p-3 ring-1 ring-line">

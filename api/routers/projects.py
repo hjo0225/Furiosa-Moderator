@@ -13,6 +13,7 @@ from collections.abc import Iterator
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ..config import get_settings
 from ..services.progress import SSE_HEADERS, Event, Pipeline, drain, sse
@@ -21,10 +22,14 @@ from ..services.material import MaterialError, compose_guide_material, extract_t
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
 from ..prompts.insight import (
+    BUCKET_CLASSIFY_SYSTEM,
+    CODEBOOK_SYSTEM,
     INSIGHT_SYSTEM,
     QUESTION_SUMMARY_SYSTEM,
     SESSION_SUMMARY_SYSTEM,
     QuestionSummariesOut,
+    bucket_classify_user,
+    codebook_user,
     insight_user,
     question_summary_user,
     session_summary_user,
@@ -34,6 +39,7 @@ from ..schemas.models import (
     GuideGenerateIn,
     GuideQuestion,
     GuideTopic,
+    BucketAssignment,
     Insight,
     InterviewGuide,
     Material,
@@ -139,22 +145,17 @@ def get_project(pid: str) -> Project:
     return _require(pid)
 
 
-class _GenBucket(ResponseBucket):
-    """생성 전용 — definition 을 필수로 승격(F2.3.2). Qwen3 가 통째로 생략하는 걸 막는다."""
-
-    definition: str
-
-
 class _GenQuestion(GuideQuestion):
-    """생성 전용 스키마 — goal·buckets 를 필수로 승격.
+    """생성 전용 스키마 — goal 을 필수로 승격.
 
     저장·수정용 GuideQuestion 의 goal 은 default("") 라 LLM 스키마에서 required 가 아니고,
     Qwen3 는 required 아닌 필드를 통째로 생략하는 실사고가 났다. 필수로 승격하면
     비워 보낸 응답이 검증에서 떨어져 structured() 의 자가교정 재시도가 발동한다.
+
+    response_buckets 는 **요구하지 않는다**(스펙 C) — 코드북은 인터뷰 뒤 전사에서 만든다.
     """
 
     goal: str
-    response_buckets: list[_GenBucket]
 
 
 class _GenTopic(GuideTopic):
@@ -368,10 +369,10 @@ def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
             q.order = qn
             qn += 1
             q.id = q.id or f"q{qn}"
-            _normalize_buckets(q)
+            q.response_buckets = []   # 스펙 C — 코드북은 측정 전에 만들지 않는다(전사에서 사후 생성)
     # 평면 questions 는 같은 객체를 가리키는 뷰라 위 수정이 그대로 반영된다(재검증 불필요).
     guide.goal = guide.goal or topic
-    yield pipe.done("normalize", buckets=sum(len(q.response_buckets) for q in guide.questions))
+    yield pipe.done("normalize", questions=qn)
 
     # 6. 저장을 품질 점검보다 먼저 한다 — 스트림이 끊겨도 1분짜리 NPU 작업이 날아가지 않게.
     #    품질 점검은 반환 가이드를 바꾸지 않는 로그 전용이라 뒤로 가도 의미가 같다.
@@ -382,17 +383,22 @@ def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
     yield pipe.start("quality")
     try:
         report = evals.guide_quality_report(saved)
-        if report["n_leading"] or report["bucket_warnings"]:
+        if report["n_leading"] or report["n_closed"] or report["n_repeated"] or report["bucket_warnings"]:
             log.warning(
-                "guide quality: project=%s n_questions=%d n_leading=%d leading=%s bucket_warnings=%s",
+                "guide quality: project=%s n_questions=%d n_leading=%d n_closed=%d "
+                "n_repeated=%d leading=%s closed=%s repeated=%s bucket_warnings=%s",
                 pid,
                 report["n_questions"],
                 report["n_leading"],
+                report["n_closed"],
+                report["n_repeated"],
                 report["leading"],
+                report["closed"],
+                report["repeated"],
                 report["bucket_warnings"],
             )
-        yield pipe.done("quality", leading=report["n_leading"],
-                        warnings=len(report["bucket_warnings"]))
+        yield pipe.done("quality", leading=report["n_leading"], closed=report["n_closed"],
+                        repeated=report["n_repeated"], warnings=len(report["bucket_warnings"]))
     except Exception as e:  # noqa: BLE001 — 품질 로그가 가이드 생성을 막아선 안 된다
         log.warning("guide quality eval 실패", exc_info=True)
         yield pipe.skip("quality", reason=str(e))
@@ -620,13 +626,43 @@ class _GenInsight(Insight):
     themes: list[_GenTheme]
 
 
+class _CodebookOut(BaseModel):
+    """코드북 귀납 생성 출력 — 한 문항의 버킷 목록(스펙 C). id 는 서버가 채운다."""
+
+    buckets: list[ResponseBucket]
+
+
 _INSIGHT_STEPS = [
     ("sessions", "완료 세션 수집"),
     ("summarize", "세션 요약"),
     ("insight", "종합 인사이트"),
+    ("codebook", "코드북 — 전사에서 귀납 생성 + 분류"),
     ("counts", "감정·테마·버킷 분포 — DB group-by (LLM 아님)"),
     ("qsummary", "문항별 요약"),
 ]
+
+
+def _answers_by_session_question(turns_by_session: list) -> dict:
+    """완료 세션의 응답자 턴을 (session_id, question_id) 로 묶는다 — 코드북 분류의 입력.
+
+    반환 {(sid, qid): {"turn_ids": [...], "text": "이어붙인 답변"}}. 분류는 (세션·문항)당
+    1회만 하고, 고른 버킷을 그 묶음의 모든 응답자 턴에 써넣는다 — store.bucket_distribution 이
+    (세션·문항)당 1표로 세는 계약을 그대로 재사용하기 위해서다(계약 1).
+    """
+    grouped: dict = {}
+    for turns in turns_by_session:
+        for t in turns:
+            if t.role != "respondent":
+                continue
+            qid = (t.question_id or "").strip()
+            text = (t.text or "").strip()
+            if not qid or not text:
+                continue
+            key = (t.session_id, qid)
+            slot = grouped.setdefault(key, {"turn_ids": [], "text": ""})
+            slot["turn_ids"].append(t.id)
+            slot["text"] = (slot["text"] + " " + text).strip()
+    return grouped
 
 
 def _completed_sessions(pid: str) -> list:
@@ -708,6 +744,64 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
         except LLMError as e:
             log.warning("overall 재생성 실패: %s", e)
     yield pipe.done("insight", themes=len(insight.themes), **_usage_detail(usage))
+
+    # 2.5 코드북 — 전사에서 귀납 생성 + 분류(스펙 C). 인터뷰 중 reflect_bucket 을 뺐으므로
+    #     여기서 문항마다 실제 답변으로 버킷을 만들고, (세션·문항)당 1회 분류해 turns.bucket_id 에
+    #     써넣는다. 개수는 아래 counts 단계의 store.bucket_distribution 이 DB group-by 로 센다(계약 1).
+    yield pipe.start("codebook")
+    turns_by_session = [store.list_turns(pid, s.id) for s in sessions]
+    slots = _answers_by_session_question(turns_by_session)
+    qmeta = {q.id: q for q in (guide.questions if guide else [])}
+    # 문항별로 답변을 모아 코드북을 만든다(문항당 1콜)
+    answers_by_q: dict[str, list[str]] = {}
+    for (_sid, qid), slot in slots.items():
+        answers_by_q.setdefault(qid, []).append(slot["text"])
+    codebooks: dict[str, list[ResponseBucket]] = {}
+    for qid, answers in answers_by_q.items():
+        q = qmeta.get(qid)
+        try:
+            cb, _ = llm.structured(
+                CODEBOOK_SYSTEM,
+                codebook_user(q.text if q else "", q.goal if q else "", answers),
+                _CodebookOut, max_tokens=800,
+            )
+        except LLMError as e:
+            log.warning("코드북 생성 실패 (q=%s): %s", qid, e)
+            continue
+        buckets = cb.buckets
+        for i, b in enumerate(buckets):
+            b.id = b.id or f"{qid}_b{i + 1}"
+        if buckets and not any(b.is_catchall for b in buckets):
+            buckets.append(ResponseBucket(id=f"{qid}_other", label="기타", is_catchall=True))
+        codebooks[qid] = buckets
+    # (세션·문항)당 1회 분류 → 그 묶음의 모든 응답자 턴에 bucket_id 를 써넣는다
+    for (sid, qid), slot in slots.items():
+        buckets = codebooks.get(qid) or []
+        if not buckets:
+            continue
+        bucket_ids = {b.id for b in buckets}
+        catchall = next((b.id for b in buckets if b.is_catchall), buckets[-1].id)
+        try:
+            out, _ = llm.structured(
+                BUCKET_CLASSIFY_SYSTEM,
+                bucket_classify_user(
+                    (qmeta.get(qid).text if qmeta.get(qid) else ""),
+                    (qmeta.get(qid).goal if qmeta.get(qid) else ""),
+                    [b.model_dump() for b in buckets], slot["text"]),
+                BucketAssignment, max_tokens=200,
+            )
+        except LLMError as e:
+            log.warning("코드북 분류 실패 (session=%s q=%s): %s", sid, qid, e)
+            continue
+        bid = out.bucket_id if out.bucket_id in bucket_ids else catchall
+        for tid in slot["turn_ids"]:
+            store.update_turn(pid, sid, tid, {
+                "bucket_id": bid,
+                "bucket_confidence": max(0.0, min(1.0, out.confidence)),
+                "bucket_evidence": out.evidence,
+            })
+    insight.codebooks = codebooks
+    yield pipe.done("codebook", questions=len(codebooks))
 
     # 3. LLM 이 낸 '숫자'는 버리고 DB 실측으로 덮어쓴다.
     #    주제·요약·인용 같은 해석은 LLM 이 잘하지만, 세는 일은 LLM 에게 맡기면 안 된다.
