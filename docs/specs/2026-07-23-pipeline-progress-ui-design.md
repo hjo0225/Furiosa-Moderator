@@ -31,7 +31,7 @@
 1순위는 답답함 해소가 아니라 **발표에서 "RNGD가 지금 일하고 있다"를 보이게 만드는 것**이다. 이 선택이 아래 설계를 지배한다.
 
 - 단계 이름만이 아니라 **실제로 무엇을 했는지**를 드러낸다 — 찾아온 근거 스니펫, 세션 `i/N`, 실측 토큰 수, 모델명.
-- 수치는 전부 실측이다. `Usage(model, prompt_tokens, completion_tokens)`가 이미 모든 LLM 호출에서 돌아온다(`llm_client.py:212`, `:311`). **추정치를 실측처럼 보여주지 않는다**(AGENTS.md §5, 보고서 §8과 동일 기준).
+- 수치는 전부 실측이다. `Usage(model, tokens_in, tokens_out)`가 이미 모든 LLM 호출에서 돌아온다(`llm_client.py:47`). **추정치를 실측처럼 보여주지 않는다**(AGENTS.md §5, 보고서 §8과 동일 기준).
 - AGENTS.md §0.1 계약 1("집계 숫자는 LLM이 세지 않는다")은 인사이트 진행 화면의 한 단계로 **눈에 보이게** 만든다.
 
 ### 채택하지 않은 접근
@@ -132,7 +132,7 @@ def generate_guide_stream(pid, body):
 | `material` | 자료 요약 조합 | `compose_guide_material(get_slot_summaries)` | `{"slots": n}` |
 | `evidence` | 근거 검색 | 슬롯별 임베딩 검색 2~3회 · dedup · cap 9 | `{"found": n, "samples": [{text, source}]}` · 자료 없으면 **skip** |
 | `audience` | 대상 청중 수집 | `collect_personas(p)` | `{"personas": n}` · 코퍼스 비면 **skip** |
-| `llm` | 문항 생성 | `structured(…, max_tokens=2000)` — **RNGD** | `{"model": …, "tokens": n, "questions": n}` |
+| `llm` | 문항 생성 | `structured(…, max_tokens=4000)` — **RNGD** | `{"model": …, "tokens": n, "questions": n}` |
 | `normalize` | 응답 버킷 정규화 | `_split_goal_from_text` · `_normalize_buckets` | `{"buckets": n}` |
 | `quality` | 품질 점검 | `evals.guide_quality_report` (비차단) | `{"leading": n, "warnings": n}` |
 

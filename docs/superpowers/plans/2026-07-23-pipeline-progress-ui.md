@@ -8,7 +8,9 @@
 
 **Tech Stack:** FastAPI `StreamingResponse` (`text/event-stream`) · pytest + `fastapi.testclient.TestClient` · Next.js 14 App Router · TypeScript strict · Tailwind + `design.md` 토큰 · `lucide-react`
 
-**설계 근거 문서:** `docs/specs/2026-07-23-pipeline-progress-ui-design.md` (커밋 `edfa7a6`)
+**설계 근거 문서:** `docs/specs/2026-07-23-pipeline-progress-ui-design.md`
+
+**베이스 커밋:** `097df26` (PR #28 머지). 그 직전 `88b8b3d` 가 가이드 생성 83초 지연을 고치면서 `max_tokens` 2000→4000, 자료 게이트 `list_materials`→`has_materials`, `search_chunks` candidates 30→12, `collect_personas` 타임아웃 배선을 바꿨고 **웹에 인라인 경과초 표시를 넣었다.** 이 계획의 코드는 그 이후 상태를 기준으로 한다 — Task 9 는 그 인라인 표시를 진행 뷰로 대체한다.
 
 ## Global Constraints
 
@@ -552,9 +554,10 @@ def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
     material = compose_guide_material(slots)
     yield pipe.done("material", slots=sum(1 for v in slots.values() if v))
 
-    # 2. RAG 근거 검색 — 자료가 없으면 통째로 건너뛴다(임베딩 호출 자체를 안 한다)
+    # 2. RAG 근거 검색 — 자료가 없으면 통째로 건너뛴다(임베딩 호출 자체를 안 한다).
+    #    게이트는 has_materials 다 — list_materials 는 전체 text 를 끌어온다(88b8b3d).
     yield pipe.start("evidence")
-    if not store.list_materials(pid):
+    if not store.has_materials(pid):
         evidence = ""
         yield pipe.skip("evidence", reason="참고 자료 없음")
     else:
@@ -572,19 +575,29 @@ def run_guide(p: Project, body: GuideGenerateIn) -> Iterator[Event]:
 
     # 4. 문항 생성 (NPU)
     yield pipe.start("llm")
+    t0 = time.perf_counter()
     try:
         guide, usage = get_llm().structured(
             GUIDE_SYSTEM,
             guide_user(topic, target, material, p.motivation, p.utilization,
                        evidence=evidence, audience=audience),
             _GenGuide,  # goal 필수 스키마 — 비워 보내면 자가교정 재시도가 발동
-            max_tokens=2000,
+            # 문항별 vocabulary·response_buckets 가 붙으며 출력이 ~7배(≈394→≈2,775 토큰)로
+            # 커졌다. 2000 은 이미 요구 출력보다 작아 매번 truncation 재시도(전체 재생성)가
+            # 걸렸다 — _STRUCTURED_TOKEN_CEIL(4096) 아래에서 넉넉히 4000 으로 올린다.
+            # max_tokens 는 상한일 뿐 안 쓰면 비용이 들지 않는다.
+            max_tokens=4000,
             timeout=get_settings().llm_guide_timeout,   # 무거운 단발 생성 — 인터뷰 30s 와 분리
         )
     except LLMError as e:
         yield pipe.fail("llm", f"가이드 생성에 실패했습니다: {e}", status_code=502)
         return
-    yield pipe.done("llm", model=usage.model, tokens=usage.completion_tokens,
+    log.info(
+        "가이드 생성 완료 (project=%s, tokens_in=%s, tokens_out=%s, elapsed=%.2fs)",
+        pid, usage.tokens_in, usage.tokens_out, time.perf_counter() - t0,
+    )
+    # Usage 필드는 tokens_in/tokens_out 이다(llm_client.py:47) — completion_tokens 아님.
+    yield pipe.done("llm", model=usage.model, tokens=usage.tokens_out,
                     questions=len(guide.questions))
 
     # 5. 정규화 — 모델이 order/id 를 비워 보낼 수 있어 서버에서 확정한다. goal 이 text 에
@@ -850,7 +863,7 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
             )
         except LLMError as e:
             log.warning("overall 재생성 실패: %s", e)
-    yield pipe.done("insight", model=usage.model, tokens=usage.completion_tokens,
+    yield pipe.done("insight", model=usage.model, tokens=usage.tokens_out,
                     themes=len(insight.themes))
 
     # 3. LLM 이 낸 '숫자'는 버리고 DB 실측으로 덮어쓴다.
@@ -1759,12 +1772,23 @@ import { usePipeline } from "@/lib/pipeline";
   }
 ```
 
-- [ ] **Step 3: 이제 안 쓰는 `busy === "generate"` 라벨을 정리한다**
+- [ ] **Step 3: 기존 인라인 경과초 표시를 걷어낸다**
 
-394행: `{busy === "generate" ? "만드는 중…" : "가이드 생성하기"}` → `가이드 생성하기`
-424행: `{busy === "generate" ? "생성 중…" : "AI로 다시 생성"}` → `AI로 다시 생성`
-두 버튼의 `disabled={busy === "generate"}` 도 제거한다(진행 중엔 화면 자체가 바뀐다).
-`busy` 상태의 `"generate"` 유니온 멤버(53행)도 뺀다: `useState<null | "save" | "deploy">(null)`.
+`88b8b3d`(PR #28)이 이미 인라인 경과초를 넣어 뒀다. 진행 뷰가 그 역할을 대체하므로 **중복을 남기지 않는다.** 지울 것:
+
+1. `const [genElapsed, setGenElapsed] = useState(0);` (상태 선언부 끝)
+2. 그 아래 `// 가이드 생성은 문항·응답 버킷·어휘를 …` 주석이 붙은 `useEffect` 블록 통째로
+3. 빈 상태 카드 안의 `{busy === "generate" && ( … {genElapsed}초 … )}` 블록
+4. 문항 카드 안의 `{busy === "generate" && ( … {genElapsed}초 … )}` 블록
+
+그 다음 버튼 라벨을 정리한다:
+
+- 빈 상태 버튼: `{busy === "generate" ? "만드는 중…" : "가이드 생성하기"}` → `가이드 생성하기`
+- 재생성 버튼: `{busy === "generate" ? "생성 중…" : "AI로 다시 생성"}` → `AI로 다시 생성`
+- 두 버튼의 `disabled={busy === "generate"}` 제거 (진행 중엔 화면 자체가 바뀐다)
+- `busy` 유니온에서 `"generate"` 제거: `useState<null | "save" | "deploy">(null)`
+
+`grep -n "genElapsed\|busy === \"generate\"" web/app/projects/\[id\]/guide-panel.tsx` 가 **아무것도 못 찾아야** 이 단계가 끝난 것이다.
 
 - [ ] **Step 4: 타입·린트·빌드**
 
