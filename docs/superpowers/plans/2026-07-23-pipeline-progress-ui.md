@@ -943,7 +943,18 @@ git commit -m "인사이트 생성을 진행 이벤트 제너레이터로 바꾸
 
 ---
 
-## Task 4: 자료 업로드 · 웹 리서치 스트림
+## ~~Task 4: 자료 업로드 · 웹 리서치 스트림~~ — **범위에서 제외** (2026-07-23 결정)
+
+**웹 리서치(`/research`·`/materials/web`)는 프론트에 호출부가 아예 없다.** `web/lib/api.ts` 에 대응 함수가 없고 어떤 화면도 부르지 않는다 — 진행 화면을 붙일 대상 자체가 없으므로 만들지 않는다.
+
+**자료 업로드 스트림도 제외한다.** 호출부는 `new-project-form.tsx` 한 곳뿐이고(Task 0 에서 422 버그는 이미 고쳤다), 진행 화면 없이도 동작한다. 발표 데모는 가이드·인사이트 두 화면으로 충분하다는 판단.
+
+→ **백엔드는 Task 3 으로 완료.** 아래 원문은 나중에 되살릴 때를 위해 남겨 둔다.
+
+<details>
+<summary>제외된 원래 Task 4 (참고용)</summary>
+
+### Task 4: 자료 업로드 · 웹 리서치 스트림
 
 **Files:**
 - Modify: `api/routers/projects.py:267-346` (`research_candidates`, `add_web_materials`, `upload_material`)
@@ -1271,6 +1282,10 @@ Expected: 전부 통과 (기존 276건 + 신규)
 git add api/routers/projects.py api/tests/test_pipeline_streams.py
 git commit -m "자료 업로드·웹 리서치에도 진행 이벤트 스트림을 연다"
 ```
+
+---
+
+</details>
 
 ---
 
@@ -1881,7 +1896,12 @@ git commit -m "인사이트 생성에 진행 화면을 붙인다"
 
 ---
 
-## Task 11: 자료 업로드 연결
+## ~~Task 11: 자료 업로드 연결~~ — **범위에서 제외** (Task 4 와 세트)
+
+<details>
+<summary>제외된 원래 Task 11 (참고용)</summary>
+
+### Task 11: 자료 업로드 연결
 
 **Files:**
 - Modify: `web/app/projects/new/new-project-form.tsx:33-57` (`submit`), 렌더 분기
@@ -1992,7 +2012,13 @@ git commit -m "자료 업로드에 진행 화면을 붙인다"
 
 ---
 
+</details>
+
+---
+
 ## Task 12: 실동작 검증 (목이 아니라 실제 실행)
+
+> **블로커:** 로컬에 `DATABASE_URL`/`INSTANCE_CONNECTION_NAME` 이 없어 API 를 띄워도 프로젝트 생성부터 막힌다(`db.py:235`). 스키마가 pgvector 를 쓰므로 sqlite 대체도 안 된다. 로컬 Postgres 를 띄우거나 개발 환경에 붙이는 결정이 선행돼야 한다 — 사람 확인 필요.
 
 **Files:** 없음 (검증만)
 
