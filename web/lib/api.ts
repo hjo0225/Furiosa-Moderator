@@ -32,6 +32,9 @@ export type Project = {
   completed_count: number;
 };
 
+/** 자료 슬롯 — api/routers/projects.py 의 검증값과 1:1. 서버에서 필수라 빠지면 422 다. */
+export type MaterialAngle = "현상" | "원인" | "활용";
+
 /** 자료 업로드 응답 (POST /api/projects/{id}/material). */
 export type MaterialUploadResult = {
   project_id: string;
@@ -199,10 +202,16 @@ export const generateGuide = (pid: string, body?: { topic?: string; target?: str
   post<InterviewGuide>(`/api/projects/${pid}/guide`, body ?? {});
 
 /** 참고 자료 업로드 (선택). 업로드하면 가이드 생성 시 도메인 맥락이 프롬프트에 주입된다.
- *  multipart 라 JSON 헬퍼가 아니라 transcribeAudio 처럼 FormData 로 보낸다. */
-export async function uploadMaterial(pid: string, file: File): Promise<MaterialUploadResult> {
+ *  multipart 라 JSON 헬퍼가 아니라 transcribeAudio 처럼 FormData 로 보낸다.
+ *  angle 은 서버 필수값이다 — 빠지면 요청이 핸들러에 닿기도 전에 422 로 튕긴다. */
+export async function uploadMaterial(
+  pid: string,
+  file: File,
+  angle: MaterialAngle = "현상",
+): Promise<MaterialUploadResult> {
   const form = new FormData();
   form.append("file", file);
+  form.append("angle", angle);
   const res = await fetch(`${BASE}/api/projects/${pid}/material`, { method: "POST", body: form });
   if (!res.ok) throw new ApiError(res.status, `upload material → ${res.status}`);
   return (await res.json()) as MaterialUploadResult;
