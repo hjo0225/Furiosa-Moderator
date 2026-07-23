@@ -80,10 +80,10 @@ def test_migration_0011_defines_global_table():
 # 의 bind 파라미터로 WHERE 가 실렸는지 검증한다(test_briefing 의 angle 하드필터와 같은 각도).
 
 class _KChunk:
-    """KnowledgeChunkRow 흉내 — search_knowledge 가 읽는 필드만."""
+    """KnowledgeChunkRow 흉내 — search_knowledge 가 읽는 필드만(id 는 키워드 디둡용)."""
 
-    def __init__(self, text, title="t", meta=None):
-        self.text, self.title, self.meta = text, title, (meta or {})
+    def __init__(self, text, title="t", meta=None, id=None):
+        self.text, self.title, self.meta, self.id = text, title, (meta or {}), id
 
 
 class _KRow:
@@ -104,11 +104,16 @@ class _Result:
 
 class _FakeSession:
     """db_session() 대체 — (chunk, distance) 목록을 코사인 순서 그대로 돌려주고,
-    실행한 statement 를 붙잡아 둔다(corpus/meta WHERE 검증용)."""
+    실행한 statement 를 붙잡아 둔다(corpus/meta WHERE 검증용).
 
-    def __init__(self, pairs):
+    두 번째 execute(키워드 recall 쿼리)엔 kw_pairs 를 돌려준다 — 지정 안 하면 pairs
+    그대로. statements 에 발행된 모든 statement 를 순서대로 기록한다(키워드 쿼리 검증용)."""
+
+    def __init__(self, pairs, kw_pairs=None):
         self._pairs = pairs
+        self._kw_pairs = kw_pairs
         self.captured = None
+        self.statements = []
 
     def __enter__(self):
         return self
@@ -118,7 +123,9 @@ class _FakeSession:
 
     def execute(self, stmt):
         self.captured = stmt
-        return _Result([_KRow(c, d) for c, d in self._pairs])
+        self.statements.append(stmt)
+        rows = self._pairs if (len(self.statements) == 1 or self._kw_pairs is None) else self._kw_pairs
+        return _Result([_KRow(c, d) for c, d in rows])
 
 
 class _FakeLLM:
@@ -137,10 +144,10 @@ class _FakeLLM:
         return self._ranked
 
 
-def _wire(monkeypatch, pairs, fake_llm):
+def _wire(monkeypatch, pairs, fake_llm, kw_pairs=None):
     from api.briefing import pipeline
 
-    sess = _FakeSession(pairs)
+    sess = _FakeSession(pairs, kw_pairs)
     monkeypatch.setattr(pipeline, "embed_texts", lambda texts: [[0.1, 0.2, 0.3]])
     monkeypatch.setattr(pipeline, "db_session", lambda: sess)
     monkeypatch.setattr("api.services.llm_client.get_llm", lambda: fake_llm)
@@ -249,6 +256,91 @@ def test_search_knowledge_drops_out_of_range_and_clamps_to_k(monkeypatch):
     assert all(isinstance(r, dict) and "text" in r for r in out)   # 유효 dict 만(범위 밖 제거)
     assert [r["text"] for r in out] == ["A", "B"]             # 99 스킵 → 상위 k=2
     assert [r["score"] for r in out] == [0.9, 0.7]
+
+
+# --- search_knowledge (RAG-6): 범위 필터 + 키워드 recall -----------------------
+
+def test_search_knowledge_range_meta_filter(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [(_KChunk("A"), 0.10)]                    # ≤ k → 리랭커 스킵, WHERE 만 확인
+    fake = _FakeLLM(ranked=[])
+    sess = _wire(monkeypatch, pairs, fake)
+
+    pipeline.search_knowledge("q", meta_filters={"age": (20, 29)})
+
+    compiled = sess.captured.compile()
+    sql = str(compiled).upper()
+    vals = list(compiled.params.values())
+    assert "BETWEEN" in sql and "CAST" in sql         # 범위 → 숫자 캐스팅 + BETWEEN
+    assert "age" in vals and 20 in vals and 29 in vals  # meta key + lo/hi 바인드
+
+
+def test_search_knowledge_mixed_range_and_scalar_meta_filters(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [(_KChunk("A"), 0.10)]
+    fake = _FakeLLM(ranked=[])
+    sess = _wire(monkeypatch, pairs, fake)
+
+    pipeline.search_knowledge("q", meta_filters={"age": (20, 29), "sex": "M"})
+
+    compiled = sess.captured.compile()
+    sql = str(compiled).upper()
+    vals = list(compiled.params.values())
+    assert "BETWEEN" in sql and "CAST" in sql         # age → 범위
+    assert 20 in vals and 29 in vals                  # age lo/hi 바인드
+    assert "M" in vals                                # sex → 동등 필터 값 보존
+
+
+def test_search_knowledge_scalar_meta_filter_stays_equality(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [(_KChunk("A"), 0.10)]
+    fake = _FakeLLM(ranked=[])
+    sess = _wire(monkeypatch, pairs, fake)
+
+    pipeline.search_knowledge("q", meta_filters={"sex": "M"})
+
+    compiled = sess.captured.compile()
+    assert "BETWEEN" not in str(compiled).upper()     # 스칼라는 범위 아님(동등 유지)
+    assert compiled.params.get("meta_1") == "sex" and compiled.params.get("param_1") == "M"
+
+
+def test_search_knowledge_keyword_recall_merges_deduped(monkeypatch):
+    from api.briefing import pipeline
+
+    vec = [(_KChunk("소주 좋아", "tA", id="a"), 0.10),    # 벡터 후보 A, B
+           (_KChunk("맥주 좋아", "tB", id="b"), 0.20)]
+    kw = [(_KChunk("소주 파티", "tA2", id="a"), 0.0),     # id=a → 벡터 A 와 중복(디둡 대상)
+          (_KChunk("소주 신상", "tK", id="k"), 0.0)]      # id=k → 벡터엔 없던 키워드 전용
+    fake = _FakeLLM(ranked=[(2, 0.95), (0, 0.90)])        # K, A 로 재정렬(top-2)
+    sess = _wire(monkeypatch, vec, fake, kw_pairs=kw)
+
+    out = pipeline.search_knowledge("q", k=2, keywords=["소주", "맥주"])
+
+    assert len(sess.statements) == 2                      # 벡터 + 키워드, 두 쿼리 발행
+    kw_compiled = sess.statements[1].compile()
+    assert "LIKE" in str(kw_compiled).upper()             # text ILIKE(→ LIKE 렌더)
+    assert "%소주%" in kw_compiled.params.values()         # 각 키워드가 ILIKE 바인드로
+    assert "%맥주%" in kw_compiled.params.values()
+    # 리랭커 후보 풀 = 벡터 A,B + 키워드전용 K (중복 A 제거)
+    assert fake.calls[0][1] == ["소주 좋아", "맥주 좋아", "소주 신상"]
+    assert fake.calls[0][2] == 2                          # top_n == k
+    assert [r["text"] for r in out] == ["소주 신상", "소주 좋아"]  # 리랭커 순서 top-2
+    assert out[0]["score"] == 0.95
+
+
+def test_search_knowledge_without_keywords_issues_single_query(monkeypatch):
+    from api.briefing import pipeline
+
+    pairs = [(_KChunk("A", id="a"), 0.10), (_KChunk("B", id="b"), 0.20)]  # ≤ k → 리랭커도 스킵
+    fake = _FakeLLM(ranked=[])
+    sess = _wire(monkeypatch, pairs, fake)
+
+    pipeline.search_knowledge("q")                        # keywords 기본 None
+
+    assert len(sess.statements) == 1                      # 키워드 쿼리 없음 — 단일 쿼리(기존 동작 불변)
 
 
 # --- rows_from_df (ingest CLI 순수 변환부) ------------------------------------
