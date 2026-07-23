@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { Mic } from "lucide-react";
 
-import { Button, Card, ErrorState, PipelineProgress, Skeleton } from "@/components/shared";
+import { Button, Card, ErrorState, PipelineProgress, Skeleton, useToast } from "@/components/shared";
 import { usePipeline } from "@/lib/pipeline";
 import { TranscriptView } from "@/components/response-viewer";
 import {
@@ -154,6 +154,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   const [turns, setTurns] = useState<Turn[] | null>(null);
   const ins = usePipeline<Insight>();
   const [exporting, setExporting] = useState(false);
+  const { show: toast } = useToast();
 
   // 하위 탭도 URL 이 소유한다 — 결과 화면 링크를 보내면 상대도 같은 탭을 봐야 한다.
   const router = useRouter();
@@ -413,8 +414,10 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
           "text/csv",
         );
       }
+      toast({ tone: "success", message: `${format.toUpperCase()} 파일을 내보냈어요.` });
     } catch {
       setError("내보내기에 실패했어요.");
+      toast({ tone: "error", message: "내보내기에 실패했어요." });
     } finally {
       setExporting(false);
     }
@@ -472,6 +475,8 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         ))}
       </div>
 
+      {/* key={view} 로 하위 탭 전환에 짧은 페이드(design.md §7). */}
+      <div key={view} className="animate-fade-in">
       {view === "summary" && (
         <section className="rounded-xl bg-surface p-5 shadow-card ring-1 ring-line">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -617,7 +622,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
               )}
             </h2>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="ghost" onClick={() => exportAll("csv")} disabled={exporting}>
+              <Button size="sm" variant="ghost" loading={exporting} onClick={() => exportAll("csv")} disabled={exporting}>
                 {exporting ? "준비 중…" : "CSV 내보내기"}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => exportAll("json")} disabled={exporting}>
@@ -707,6 +712,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
         )}
         </section>
       )}
+      </div>
     </div>
   );
 }

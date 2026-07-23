@@ -4,11 +4,12 @@
 // InAppBridge 를 최상단에 mount 한다: 카톡 등 인앱 웹뷰는 getUserMedia 가 막혀 음성 답변이
 // 아예 불가능하므로, 인터뷰를 시작시키기 전에 외부 브라우저로 유도해야 한다.
 import { useEffect, useState } from "react";
-import { CheckCircle2, HeartHandshake } from "lucide-react";
+import { Check, CheckCircle2, HeartHandshake } from "lucide-react";
 
 import { InAppBridge } from "@/components/in-app-bridge";
 import { InterviewFlow } from "@/components/interview-flow";
 import { Button, Card, Skeleton } from "@/components/shared";
+import { cn } from "@/lib/utils";
 import {
   getPublicProject,
   screenParticipant,
@@ -21,6 +22,57 @@ import {
 type Stage = "consent" | "screener" | "interview" | "done" | "disqualified";
 
 const RETENTION = "수집일로부터 1년";
+
+/** 응답자 여정 스테퍼 — "전체 중 어디인지"(design.md §5). 스크리너 없으면 3스텝. */
+function JourneyStepper({ stage, hasScreener }: { stage: Stage; hasScreener: boolean }) {
+  const steps: { key: Stage; label: string }[] = [
+    { key: "consent", label: "동의" },
+    ...(hasScreener ? [{ key: "screener" as Stage, label: "자격 확인" }] : []),
+    { key: "interview", label: "인터뷰" },
+    { key: "done", label: "완료" },
+  ];
+  const order = steps.map((s) => s.key);
+  const current = order.indexOf(stage);
+  return (
+    <ol className="mb-6 flex items-center gap-1.5" aria-label="진행 단계">
+      {steps.map((s, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <li key={s.key} className="flex flex-1 items-center gap-1.5">
+            <span
+              className={cn(
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-semibold transition-colors",
+                done
+                  ? "bg-red text-white"
+                  : active
+                    ? "bg-blush text-red ring-1 ring-red/30"
+                    : "bg-warm-border text-warm-ink-soft",
+              )}
+              aria-current={active ? "step" : undefined}
+            >
+              {done ? <Check className="h-3 w-3" aria-hidden="true" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                "truncate text-2xs font-medium",
+                active ? "text-red" : done ? "text-warm-ink-soft" : "text-warm-ink-soft/60",
+              )}
+            >
+              {s.label}
+            </span>
+            {i < steps.length - 1 && (
+              <span
+                className={cn("h-px flex-1", done ? "bg-red/40" : "bg-warm-border")}
+                aria-hidden="true"
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 export function RespondentView({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<PublicProject | null>(null);
@@ -104,6 +156,10 @@ export function RespondentView({ projectId }: { projectId: string }) {
           stage === "interview" ? "max-w-3xl" : "max-w-xl"
         }`}
       >
+        {/* 여정 스테퍼 — 정상 진행 단계에서만(에러·로딩·마감·부적격 제외). */}
+        {project && !loadError && project.status !== "closed" && stage !== "disqualified" && (
+          <JourneyStepper stage={stage} hasScreener={screenerQs.length > 0} />
+        )}
         {loadError ? (
           <Card className="rounded-xl p-8 text-center ring-warm-border">
             <p className="text-base text-warm-ink-soft">{loadError}</p>

@@ -13,6 +13,7 @@ import {
   Container,
   ErrorState,
   Skeleton,
+  useToast,
 } from "@/components/shared";
 import { deleteProject, getProject, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { show: toast } = useToast();
 
   const reload = useCallback(() => {
     getProject(projectId)
@@ -73,6 +75,17 @@ export function ProjectView({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useEffect(reload, [reload]);
+
+  // 생성 직후 캐리오버(new-project-form 이 ?created=1 로 보낸다) — 도착지에서 1회 토스트.
+  // URL 은 바로 정리해 공유·새로고침 때 다시 뜨지 않게 한다.
+  useEffect(() => {
+    if (search?.get("created") !== "1") return;
+    toast({ tone: "success", message: "프로젝트를 만들었어요. 가이드를 생성해 보세요." });
+    const qs = new URLSearchParams(Array.from(search?.entries() ?? []));
+    qs.delete("created");
+    router.replace(qs.toString() ? `?${qs.toString()}` : window.location.pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 이미 응답이 쌓여 있으면 결과 탭을 먼저 보여준다.
   // 제출 완료 기준이다 — 진행중인 세션으로 열면 아무것도 없는 결과 화면이 첫 화면이 된다.
@@ -165,7 +178,8 @@ export function ProjectView({ projectId }: { projectId: string }) {
               ))}
             </div>
 
-            <div className="mt-6">
+            {/* key={tab} 로 remount → 짧은 페이드(탭 전환이 탁 바뀌지 않게, design.md §7). */}
+            <div key={tab} className="mt-6 animate-fade-in">
               {tab === "guide" ? (
                 <GuidePanel project={project} onProjectChange={reload} />
               ) : (
@@ -193,9 +207,11 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 setDeleteError(null);
                 try {
                   await deleteProject(projectId);
+                  toast({ tone: "success", message: "프로젝트를 삭제했어요." });
                   router.push("/projects");
                 } catch {
                   setDeleteError("삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
+                  toast({ tone: "error", message: "삭제하지 못했어요." });
                   setDeleting(false);
                   setConfirmDelete(false);
                 }

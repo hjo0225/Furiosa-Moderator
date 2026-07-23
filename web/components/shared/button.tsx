@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Variant = "primary" | "secondary" | "ghost";
@@ -37,11 +38,23 @@ export function buttonVariants({
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  /** true 면 앞에 회전 스피너(파이프라인의 loader-2 관용구와 통일)를 붙이고 자동 비활성화한다.
+   *  자식 텍스트("저장 중…")는 그대로 두어 무슨 작업인지 읽히게 한다. */
+  loading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
-    <button ref={ref} className={buttonVariants({ variant, size, className })} {...props} />
+  ({ className, variant, size, loading, disabled, children, ...props }, ref) => (
+    <button
+      ref={ref}
+      className={buttonVariants({ variant, size, className })}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />}
+      {children}
+    </button>
   ),
 );
 Button.displayName = "Button";
