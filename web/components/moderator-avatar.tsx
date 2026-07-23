@@ -1,8 +1,7 @@
 // 진행자 아바타 — 작은 웜 오브(peach→red 라디얼, design.md §5 "인터뷰(응답자, 웜)"). 말하는 동안
 // 살짝 맥동해 "지금 듣고/말하고 있다"는 인상을 준다. 압도하지 않게 소형 — 이모지 아님(design.md §4).
 //
-// [범위] 이 태스크는 컴포넌트를 만들어 export 만 한다 — interview-flow.tsx 레이아웃에 실제로
-// 배선(상단 진행자 라벨 옆 등)하는 건 후속 태스크(전면 웜 리스킨)의 몫이다.
+// interview-flow.tsx 상단 진행자 라벨 옆에 배선되어 있다(tts.speaking 을 speaking prop 으로 전달).
 //
 // 맥동은 커스텀 키프레임(.animate-moderator-pulse, globals.css)을 쓴다 — Tailwind 기본
 // animate-pulse 는 불투명도 펄스라 오브가 깜빡이며 사라지는 느낌이라 "숨쉬는 오브"엔 안 맞는다.

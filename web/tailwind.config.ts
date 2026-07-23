@@ -49,7 +49,6 @@ const config: Config = {
 
         // ── 호환 alias (기존 클래스명 유지, 값만 Furiosa 로 리맵) ──
         indigo: { DEFAULT: "#E21500", hover: "#BC1302", light: "#FBEBE9" }, // 구 sky-blue alias → red
-        violet: { DEFAULT: "#BC1302", hover: "#951000", light: "#FBEBE9" }, // 구 보조 액센트 → red-dark
         bg: "#FFFFFF", // → canvas
         surface: "#FFFFFF", // → canvas
         slate: "#151515", // 다크 밴드(CTA)·Review 솔리드 버튼 → obsidian

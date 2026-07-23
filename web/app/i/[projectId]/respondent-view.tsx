@@ -8,7 +8,7 @@ import { CheckCircle2, HeartHandshake } from "lucide-react";
 
 import { InAppBridge } from "@/components/in-app-bridge";
 import { InterviewFlow } from "@/components/interview-flow";
-import { Button, Card } from "@/components/shared";
+import { Button, Card, Skeleton } from "@/components/shared";
 import {
   getPublicProject,
   screenParticipant,
@@ -109,9 +109,12 @@ export function RespondentView({ projectId }: { projectId: string }) {
             <p className="text-base text-warm-ink-soft">{loadError}</p>
           </Card>
         ) : !project ? (
-          <p className="animate-pulse text-center font-mono text-meta text-warm-ink-soft">
-            불러오는 중…
-          </p>
+          <div className="space-y-3">
+            <Skeleton className="h-8 w-2/3 bg-warm-border" />
+            <Skeleton className="h-4 w-full bg-warm-border" />
+            <Skeleton className="h-4 w-5/6 bg-warm-border" />
+            <Skeleton className="mt-4 h-40 w-full rounded-xl bg-warm-border" />
+          </div>
         ) : project.status === "closed" ? (
           <Card className="rounded-xl p-8 text-center ring-warm-border">
             <p>

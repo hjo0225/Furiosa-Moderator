@@ -25,7 +25,6 @@
        (이 값들을 var() 로 읽는 기존 컴포넌트/Tailwind 클래스가 코드 변경 없이 새 팔레트를 입는다) */
     --indigo: #e21500; /* 구 sky-blue → red. alias명만 유지 */
     --indigo-hover: #bc1302;
-    --violet: #bc1302; /* 구 보조 액센트 → red-dark (design.md §0: 액센트는 red 단일) */
     --bg: #ffffff; /* → canvas */
     --bg-alt: #faf9f7; /* → paper */
     --surface: #ffffff; /* → canvas */
@@ -33,7 +32,6 @@
     --text-primary: #151515; /* → obsidian */
     --text-secondary: #444444; /* → charcoal */
     --border: #e1e1e1; /* → platinum */
-    --auth-gradient: linear-gradient(135deg, #151515 0%, #0a0a0a 60%, #050505 100%);
     /* 기본 액센트 = brand-red (플랫폼·앱·의뢰자·응답자 공통, 표면 불문 단일 액센트). design.md §0·§1.
        --accent : 텍스트·링크·테두리(흰 배경 가독)  --accent-solid : 채운 버튼 배경  --accent-on : 그 위 글자 */
     --accent: #e21500;

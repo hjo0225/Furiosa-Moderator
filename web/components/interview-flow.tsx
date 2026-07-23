@@ -326,13 +326,19 @@ function QuestionAndAnswer(p: {
           </p>
         )}
         {phase === "recording" && (
-          <p className="mb-2 flex items-center gap-1.5 text-meta font-medium text-red">
+          <p
+            role="status"
+            aria-live="polite"
+            className="mb-2 flex items-center gap-1.5 text-meta font-medium text-red"
+          >
             <Circle className="h-2.5 w-2.5 animate-pulse" fill="currentColor" aria-hidden="true" />
             {en ? "Recording" : "녹음 중"} <span className="font-mono tabular-nums">{recorder.elapsedSec}s</span>
           </p>
         )}
         {phase === "transcribing" && (
-          <p className="mb-2 text-meta text-warm-ink-soft">{en ? "Transcribing…" : "음성 인식 중…"}</p>
+          <p role="status" aria-live="polite" className="mb-2 text-meta text-warm-ink-soft">
+            {en ? "Transcribing…" : "음성 인식 중…"}
+          </p>
         )}
         {error && <p className="mb-2 text-meta text-nogo">{error}</p>}
 
@@ -350,7 +356,7 @@ function QuestionAndAnswer(p: {
           placeholder={en ? "Type or speak your answer" : "답변을 입력하거나 마이크로 말하세요"}
           className={fieldClass("min-h-[7rem] w-full resize-none text-lead ring-warm-border")}
         />
-        {/* 컨트롤 — 마이크·다음 모두 공유 Button(동일 h-14 pill)으로 통일 */}
+        {/* 컨트롤 — 마이크·다음 모두 공유 Button(동일 h-14, rounded 렉트)으로 통일 */}
         <div className="mt-3 flex items-center gap-2">
           {recorder.supported && (
             <Button
@@ -359,7 +365,16 @@ function QuestionAndAnswer(p: {
               size="lg"
               onClick={() => void toggleRecord()}
               disabled={busy || phase === "transcribing"}
-              aria-label={en ? "Record answer" : "음성으로 답하기"}
+              aria-label={
+                phase === "recording"
+                  ? en
+                    ? "Stop recording"
+                    : "녹음 정지"
+                  : en
+                    ? "Record answer"
+                    : "음성으로 답하기"
+              }
+              aria-pressed={phase === "recording"}
               className={cn(
                 "w-14 shrink-0 !px-0 !bg-blush !text-red-dark !ring-warm-border hover:!bg-blush/70",
                 phase === "recording" &&

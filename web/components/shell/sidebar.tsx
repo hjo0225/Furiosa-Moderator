@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { Cpu, Folder, Link as LinkIcon, Menu, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -36,6 +36,37 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
   const resolvedActive: SidebarActive =
     active ?? (pathname?.startsWith("/projects/benchmark") ? "benchmark" : "projects");
   const [mobileOpen, setMobileOpen] = useState(false);
+  // md 이상은 항상 보이는 고정 사이드바라 아래 "닫힘" a11y 잠금을 절대 걸면 안 된다.
+  // 뷰포트를 직접 추적해서, md 미만 + 닫힘일 때만 잠근다(md: 로는 aria/inert 를
+  // 조건부로 못 걸므로 matchMedia 로 판별). 초기값 false(=잠그지 않음)로 두어
+  // SSR·데스크톱 첫 페인트에서 실수로 데스크톱 사이드바를 잠그지 않는다.
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobileViewport(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+
+  // 모바일 드로어가 열려 있는 동안 Escape 로 닫는다(다이얼로그 표준 동작).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
+  const mobileDialogOpen = isMobileViewport && mobileOpen;
+  const mobileClosed = isMobileViewport && !mobileOpen;
+  // inert 는 @types/react 18.3 에 아직 타입이 없어 캐스팅으로 우회한다 — 붙이면 포커스 가능한
+  // 하위 요소 전부와 접근성 트리에서 자동으로 빠진다(개별 tabIndex 관리보다 안전).
+  const inertProps = mobileClosed
+    ? ({ inert: "" } as unknown as React.HTMLAttributes<HTMLElement>)
+    : {};
 
   return (
     <>
@@ -64,10 +95,16 @@ export function Sidebar({ active }: { active?: SidebarActive }) {
       )}
 
       <aside
+        {...inertProps}
+        role={mobileDialogOpen ? "dialog" : undefined}
+        aria-modal={mobileDialogOpen ? true : undefined}
+        aria-label={mobileDialogOpen ? "메뉴" : undefined}
+        aria-hidden={mobileClosed ? true : undefined}
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 flex-col border-r border-silver bg-canvas transition-transform duration-200",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
+          mobileClosed && "pointer-events-none",
         )}
       >
         <div className="flex items-center justify-between px-5 pb-5 pt-6">

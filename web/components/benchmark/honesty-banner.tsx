@@ -16,8 +16,8 @@ export function HonestyBanner({ result }: { result: BenchmarkResult }) {
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-grey" aria-hidden="true" />
         <div className="space-y-1.5 text-meta text-charcoal">
           <p>
-            <strong className="font-semibold text-obsidian">실측 전에는 전부 &ldquo;—&rdquo;</strong>
-            입니다 — 예시로 채운 숫자는 없습니다.
+            <strong className="font-semibold text-obsidian">측정값은 실측 전까지 전부 &ldquo;—&rdquo;</strong>
+            입니다(아래 곡선은 형태만 보여주는 스키매틱) — 예시로 채운 숫자는 없습니다.
           </p>
           <p>
             전력 수치는 카드 센서가 아니라 <strong className="font-semibold text-obsidian">벽면 PDU 실측</strong>{" "}

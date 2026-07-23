@@ -38,16 +38,17 @@ const STATUS_LABEL: Record<Session["status"], string> = {
 };
 
 // 차트 색 — design.md §1 데이터 팔레트(차트는 CSS 변수를 못 읽어 리터럴로 둔다).
-// 센티먼트: 긍정=mint · 중립=grey · 우려=orange · 부정=maroon(브랜드 red 와 충돌 회피).
+// 센티먼트: 긍정=mint · 중립=grey · 우려=orange · 부정=red(brand-red — design.md §1 문서 기준).
+// maroon(#6F2020)은 에러 전용 시맨틱이라 부정 감정 막대에 재사용하지 않는다.
 const ACCENT = "#E21500";
 const SENTIMENT_COLOR: Record<string, string> = {
   긍정: "#70E697",
   중립: "#7F7F7F",
-  부정: "#6F2020",
+  부정: "#E21500",
   우려: "#FF9A52",
   positive: "#70E697",
   neutral: "#7F7F7F",
-  negative: "#6F2020",
+  negative: "#E21500",
 };
 
 function formatDateTime(iso: string | null): string {
