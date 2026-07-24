@@ -36,6 +36,27 @@ def test_codebook_user_lists_answers_and_question():
     assert "총 3개" in prompt
 
 
+def test_codebook_user_caps_sample_and_answer_length():
+    """답변이 많아도 프롬프트가 같이 커지지 않는다 — 전수를 넣었더니 모델이 답변마다
+    버킷을 하나씩 뽑아 4096 토큰 상한에서도 잘렸다(라이브 34건, q3 은 아예 실패).
+    표본은 앞에서 자르지 않고 균등 간격으로 훑어 전체 스펙트럼을 남긴다."""
+    answers = [f"답변{i}번 " + "가" * 500 for i in range(40)]
+    prompt = codebook_user("문항", "목표", answers)
+
+    assert "총 40개 중 24개 표본" in prompt        # 잘랐다는 사실을 프롬프트가 밝힌다
+    assert prompt.count("\n- ") == 24              # 상한대로 24개만
+    assert "가" * 300 not in prompt                # 답변 하나가 200자로 잘렸다
+    # 균등 간격(step=40/24) 이라 첫 답변과 거의 마지막 답변이 함께 들어간다 —
+    # 앞에서 24개를 자르면 먼저 응답한 사람 쪽으로 코드북이 쏠린다.
+    assert "답변0번" in prompt
+    assert "답변38번" in prompt
+
+
+def test_codebook_system_caps_bucket_count():
+    assert "최대 6개" in CODEBOOK_SYSTEM
+    assert "답변 하나마다 버킷을 만들지 마세요" in CODEBOOK_SYSTEM
+
+
 # --- 분류 프롬프트 · 모델 ----------------------------------------------------
 
 def test_system_has_pick_one_constraint():
