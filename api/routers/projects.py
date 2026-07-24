@@ -770,7 +770,15 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
             cb, _ = llm.structured(
                 CODEBOOK_SYSTEM,
                 codebook_user(q.text if q else "", q.goal if q else "", answers),
-                _CodebookOut, max_tokens=800,
+                _CodebookOut,
+                # 800 은 응답이 몇 건일 때만 맞는 값이었다. 34세션에서 문항마다 버킷
+                # 5~7개(label+description+예시)를 내면 800 을 넘겨 **매번** truncation
+                # 재시도가 걸렸다 — 재시도는 부분 이어받기가 아니라 전체 재생성이라
+                # 문항 1개에 LLM 을 3번(800→1600→3200) 태운다. 라이브에서 인사이트
+                # 생성이 Cloud Run 300s 타임아웃에 잘린 주원인이다.
+                # 가이드 생성이 같은 이유로 2000→4000 으로 올렸던 것과 동일한 사고다.
+                # max_tokens 는 상한일 뿐 안 쓰면 비용이 들지 않는다.
+                max_tokens=3000,
             )
         except LLMError as e:
             log.warning("코드북 생성 실패 (q=%s): %s", qid, e)
