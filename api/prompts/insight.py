@@ -69,21 +69,50 @@ CODEBOOK_SYSTEM = (
     "당신은 정성조사 분석가입니다. 한 문항에 대한 여러 응답자의 실제 답변을 받아, "
     "그 답변들을 분류할 카테고리(코드북)를 **답변에서 귀납적으로** 도출합니다.\n"
     "규칙:\n"
-    "- label(짧은 이름)과 definition(1문장 정의)을 가진 버킷 3~6개를 만드세요.\n"
+    "- label(짧은 이름)과 definition(1문장 정의)을 가진 버킷을 **최대 6개까지만** 만드세요. "
+    "3개 미만도, 6개 초과도 안 됩니다. **답변 하나마다 버킷을 만들지 마세요** — "
+    "여러 답변을 아우르는 카테고리로 묶는 것이 목적입니다.\n"
+    "- label 은 12자 이내, definition 은 한 문장(40자 이내)으로 짧게 쓰세요.\n"
     "- **실제 답변에 나타난 것만** 버킷으로 만드세요. 나오지 않은 카테고리를 미리 만들지 마세요.\n"
     "- 버킷은 상호배타적이고(MECE) 서로 결이 뚜렷이 달라야 합니다. 겹치면 합치세요.\n"
     "- 어디에도 잘 안 맞는 답변을 위해 is_catchall=true 인 '기타' 버킷 하나를 포함하세요.\n"
     "- id 는 비워 두세요(서버가 채웁니다). 개수·비율은 세지 마세요(서버가 셉니다)."
 )
 
+# 코드북 프롬프트에 넣을 답변 표본 상한. 응답이 늘어도 프롬프트가 같이 커지지 않게 한다.
+_CODEBOOK_SAMPLE = 24
+_CODEBOOK_ANSWER_CHARS = 200
+
+
+def _codebook_sample(answers: list[str]) -> list[str]:
+    """답변을 균등 간격으로 최대 _CODEBOOK_SAMPLE 개 뽑고 길이도 자른다(결정론).
+
+    앞에서 N개를 자르면 먼저 응답한 사람들 쪽으로 코드북이 쏠린다 — 균등 간격으로
+    훑어 전체 스펙트럼을 남긴다. 카테고리를 **귀납**하는 데엔 전수가 필요 없고,
+    분류(bucket_classify)는 어차피 답변 하나하나를 개별로 다시 본다.
+    """
+    if len(answers) > _CODEBOOK_SAMPLE:
+        step = len(answers) / _CODEBOOK_SAMPLE
+        answers = [answers[int(i * step)] for i in range(_CODEBOOK_SAMPLE)]
+    return [a[:_CODEBOOK_ANSWER_CHARS] for a in answers]
+
 
 def codebook_user(question_text: str, goal: str, answers: list[str]) -> str:
-    block = "\n".join(f"- {a}" for a in answers) or "(답변 없음)"
+    """코드북 생성 프롬프트. 답변은 표본·길이를 잘라 넣는다.
+
+    전수를 그대로 넣었더니(라이브 34건) 모델이 답변마다 버킷을 하나씩 뽑아 출력이
+    4096 토큰 상한에서도 잘렸다 — 재시도가 전체 재생성이라 문항 하나에 수 분이 걸리고
+    q3 은 "Unterminated string" 으로 아예 실패했다. 입력을 줄이는 게 출력을 줄인다.
+    """
+    sample = _codebook_sample(answers)
+    block = "\n".join(f"- {a}" for a in sample) or "(답변 없음)"
+    scope = (f"(총 {len(answers)}개 중 {len(sample)}개 표본)"
+             if len(sample) < len(answers) else f"(총 {len(answers)}개)")
     return (
         f"[문항]\n{question_text}\n\n"
         f"[이 문항으로 알아내려는 것]\n{goal or '(미기재)'}\n\n"
-        f"[응답자들의 실제 답변] (총 {len(answers)}개)\n{block}\n\n"
-        "위 답변들을 분류할 코드북(버킷 3~6개)을 만드세요."
+        f"[응답자들의 실제 답변] {scope}\n{block}\n\n"
+        "위 답변들을 분류할 코드북을 만드세요. 버킷은 최대 6개, '기타' 포함."
     )
 
 
