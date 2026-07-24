@@ -21,7 +21,6 @@ from ..briefing import pipeline as briefing_pipeline
 from ..services.material import MaterialError, compose_guide_material, extract_text
 
 from ..prompts.guide import GUIDE_SYSTEM, guide_user
-from ..prompts.refine import REFINE_SYSTEM, refine_user
 from ..prompts.insight import (
     BUCKET_CLASSIFY_SYSTEM,
     CODEBOOK_SYSTEM,
@@ -37,8 +36,6 @@ from ..prompts.insight import (
 )
 from ..schemas.models import (
     BlocklistSetIn,
-    BriefRefineIn,
-    BriefRefineOut,
     GuideGenerateIn,
     GuideQuestion,
     GuideTopic,
@@ -48,7 +45,6 @@ from ..schemas.models import (
     Material,
     Project,
     ProjectCreateIn,
-    RefinedField,
     ResponseBucket,
     ScreenerSetIn,
     ThemeInsight,
@@ -96,32 +92,8 @@ def create_project(body: ProjectCreateIn) -> Project:
     )
 
 
-@router.post("/refine-brief", response_model=BriefRefineOut)
-def refine_brief(body: BriefRefineIn) -> BriefRefineOut:
-    """C-1 브리프 정제 — 프로젝트 생성 전, 급히 적은 네 칸을 명확한 문장으로 다듬는다(NPU).
-
-    프로젝트를 만들지 않는 유틸리티다. LLM 은 표현만 다듬고 내용을 지어내지 않는다(refine.py).
-    실패하면 502 를 내되, 프론트는 정제를 '선택'으로 다뤄 실패해도 생성 흐름을 막지 않는다.
-
-    `/{pid}` 경로들보다 먼저 정의해 static 경로가 pid 로 오인되지 않게 한다.
-    """
-    if not any(v.strip() for v in (body.topic, body.target, body.motivation, body.utilization)):
-        raise HTTPException(400, "다듬을 내용을 입력하세요.")
-    try:
-        out, _ = get_llm().structured(
-            REFINE_SYSTEM,
-            refine_user(body.topic, body.target, body.motivation, body.utilization),
-            BriefRefineOut,
-            max_tokens=900,
-        )
-    except LLMError as e:
-        raise HTTPException(502, f"브리프 정제에 실패했습니다: {e}") from e
-    # 안전장치 — 빈 입력 항목을 모델이 지어내 채웠으면 되돌린다(없는 것 발명 금지, refine.py).
-    for field, value in (("topic", body.topic), ("target", body.target),
-                         ("motivation", body.motivation), ("utilization", body.utilization)):
-        if not value.strip():
-            setattr(out, field, RefinedField(text="", note=""))
-    return out
+# 브리프 AI 정제(`POST /refine-brief`)는 걷어냈다 — 정제본 품질이 원문만 못해
+# 의뢰자가 오히려 나쁜 문장을 적용하게 됐다. 브리프는 의뢰자가 쓴 그대로 쓴다.
 
 
 @router.delete("/{pid}")
@@ -293,7 +265,10 @@ _GUIDE_STEPS = [
     ("evidence", "근거 검색"),
     ("audience", "대상 청중 수집"),
     ("llm", "문항 생성"),
-    ("normalize", "응답 버킷 정규화"),
+    # 버킷(코드북)은 인터뷰 뒤 전사에서 만든다(스펙 C) — 이 단계는 주제·문항의
+    # 순번·id·goal 분리만 한다. 진행 화면에 '버킷 생성'을 띄우면 의뢰자가 이때
+    # 보기가 정해진다고 오해한다.
+    ("normalize", "문항 구조 정리"),
     ("quality", "품질 점검"),
 ]
 

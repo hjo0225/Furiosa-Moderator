@@ -113,8 +113,9 @@ export function GuidePanel({
     setMessage(null);
   }, []);
 
-  // 가이드 생성은 문항·응답 버킷·어휘를 한 번에 만드느라 1분 안팎 걸린다. 경과초만으로는
+  // 가이드 생성은 주제·문항·어휘를 한 번에 만드느라 1분 안팎 걸린다. 경과초만으로는
   // 무엇을 하는 중인지 알 수 없어, 서버가 흘려보내는 실제 단계를 진행 화면으로 받는다.
+  // (응답 버킷은 여기서 만들지 않는다 — 인터뷰 뒤 전사에서 귀납 생성, 스펙 C)
   async function generate() {
     setError(null);
     setMessage(null);
