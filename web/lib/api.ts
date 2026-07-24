@@ -216,25 +216,7 @@ export const createProject = (body: {
   utilization?: string; // 활용 방안
 }) => post<Project>("/api/projects", body);
 
-/** 정제된 한 항목 — 다듬은 문장 + '무엇을 고쳤는지' 한 줄(note). note 가 비면 안 고친 것. */
-export type RefinedField = { text: string; note: string };
-
-/** 브리프 정제 결과 (C-1) — 네 항목 각각. 화면에서 원문과 나란히 비교해 보여준다. */
-export type BriefRefine = {
-  topic: RefinedField;
-  target: RefinedField;
-  motivation: RefinedField;
-  utilization: RefinedField;
-};
-
-/** 브리프 정제 (C-1) — 프로젝트 생성 전 급히 적은 네 칸을 AI(NPU)가 명확한 문장으로 다듬는다.
- *  LLM 은 표현만 다듬고 내용을 지어내지 않는다. 빈 입력 항목은 빈 채로 돌아온다. */
-export const refineBrief = (body: {
-  topic: string;
-  target: string;
-  motivation: string;
-  utilization: string;
-}) => post<BriefRefine>("/api/projects/refine-brief", body);
+// 브리프 AI 정제(refineBrief)는 걷어냈다 — 정제본 품질이 원문만 못했다. 백엔드 엔드포인트도 없다.
 
 export const listProjects = () => request<Project[]>("/api/projects");
 

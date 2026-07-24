@@ -4,9 +4,21 @@
 페르소나)을 knowledge_chunks 전역 풀에 한 번에 밀어 넣는 범용 로더. 순수 변환
 (rows_from_df)과 부작용(임베딩·DB insert)을 분리해 변환부만 단위 테스트한다.
 
-예)
-  python scripts/ingest_knowledge.py --parquet personas.parquet --corpus personas \\
-      --text-cols persona,background --title-col name --meta-cols age,sex,province
+페르소나 시드(personas_1k.parquet — uuid/age/sex/marital_status/education_level/
+occupation/district/province/persona/embed_text/embedding, 1,000행)를 넣는 정본 명령:
+
+  python scripts/ingest_knowledge.py --parquet personas_1k.parquet --corpus personas \\
+      --text-cols embed_text --title-col persona \\
+      --meta-cols age,sex,province,district,occupation,education_level,marital_status --replace
+
+컬럼 선택 근거 — services/audience.collect_personas 가 `title or text` 를 200자로 잘라
+[대상 청중] 불릿으로 쓴다. `persona`(한 줄 요약, ~81자)가 title 로 딱 맞고 검색 본문은
+`embed_text`(전체 서술)여야 리콜이 산다. 하드필터는 age(숫자 범위)·sex 뿐이고 시드의
+sex 값이 "남자"/"여자" 라 AudienceSpec 의 Literal 과 그대로 맞는다.
+
+시드의 `embedding` 열은 쓰지 않고 여기서 다시 임베딩한다 — 검색 질의는 우리 임베드
+엔드포인트로 벡터화되므로 코퍼스도 같은 모델이어야 한다. (2026-07-24 확인: 시드 벡터와
+우리 출력의 코사인이 1.0000/1024dim 으로 동일 모델이었지만, 그 사실이 계약은 아니다.)
 """
 from __future__ import annotations
 
