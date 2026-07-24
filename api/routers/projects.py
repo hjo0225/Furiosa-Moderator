@@ -732,7 +732,12 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
         # _GenInsight — keywords 필수 승격판. required 필드는 자가교정 재시도를 더 자주
         # 태우니 3000→3600(그래도 _STRUCTURED_TOKEN_CEIL=4096 아래)으로 여유를 둔다.
         insight, usage = llm.structured(
-            INSIGHT_SYSTEM, insight_user(p.topic, summaries), _GenInsight, max_tokens=3600
+            INSIGHT_SYSTEM, insight_user(p.topic, summaries), _GenInsight, max_tokens=3600,
+            # 요약 34건을 한 프롬프트에 넣고 3600 토큰을 뽑는 무거운 단발이라 인터뷰용
+            # 기본 30s 로는 못 끝낸다 — 라이브에서 30s×3회 재시도 후 95.7s 만에 502 가
+            # 났고 성공한 LLM 호출이 로그에 하나도 없었다. 응답이 늘수록 프롬프트가
+            # 길어지므로 세션 수가 커질수록 확실히 터지는 자리다(audience.py 와 동일 패턴).
+            timeout=get_settings().llm_guide_timeout,
         )
     except LLMError as e:
         yield pipe.fail("insight", f"집계 생성에 실패했습니다: {e}", status_code=502)
@@ -779,6 +784,9 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
                 # 가이드 생성이 같은 이유로 2000→4000 으로 올렸던 것과 동일한 사고다.
                 # max_tokens 는 상한일 뿐 안 쓰면 비용이 들지 않는다.
                 max_tokens=3000,
+                # 3000 토큰을 뽑는 단발이라 기본 30s 로는 못 끝낸다 — 라이브에서
+                # "코드북 생성 실패 (q=q6): 3회 모두 실패: Request timed out" 이 났다.
+                timeout=get_settings().llm_guide_timeout,
             )
         except LLMError as e:
             log.warning("코드북 생성 실패 (q=%s): %s", qid, e)
@@ -857,6 +865,7 @@ def run_insight(p: Project, sessions: list) -> Iterator[Event]:
                 question_summary_user(items),
                 QuestionSummariesOut,
                 max_tokens=3000,
+                timeout=get_settings().llm_guide_timeout,   # insight·codebook 과 같은 무거운 단발
             )
             insight.question_summaries = qs_out.items
             yield pipe.done("qsummary", items=len(qs_out.items))
